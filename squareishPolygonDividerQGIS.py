@@ -331,13 +331,23 @@ def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal):
 # --------------------------------- USER SETTINGS -------------------------------------- #
 
 
-def splitPoly(inFile, outFilePath, targetArea, absorb_flag, direction):
+def splitPoly(layer, outFilePath, targetArea, absorb_flag, direction):
 
 	# initial settings
 	t = 0.1			# tolerance for function rooting - this is flexible now it has been divorced from the buffer
 	buffer = 1e-6		# this is the buffer to ensure that an intersection occurs
-	horizontal_flag = True  # set the direction (currently either 'h' or 'v')
-	forward_flag = True	# True = cut from bottom / left, False = cut from top / right
+	
+	# set the direction (currently either 'h' or 'v')
+	if direction < 2:
+		horizontal_flag = True 
+	else:
+		horizontal_flag = False
+
+	# True = cut from bottom / left, False = cut from top / right
+	if (direction == 0 or direction == 2): 
+		forward_flag = True
+	else:
+		forward_flag = False	
 
 	# this is used to make sure we don't hit an insurmountable error and just repeatedly change direction
 	ERROR_FLAG_0 = False 	# tracks if increasing number of subdivisions failed 
@@ -352,10 +362,10 @@ def splitPoly(inFile, outFilePath, targetArea, absorb_flag, direction):
 	subfeatures = []
 
 	# get the geometry from the shapefile (assumes one feature for now)
-	layer = QgsVectorLayer(infile, "inFile", "ogr")
-	if not layer.isValid():
-		print "Input layer failed to load!"
-		sys.exit()
+#	layer = QgsVectorLayer(infile, "inFile", "ogr")
+#	if not layer.isValid():
+#		print "Input layer failed to load!"
+#		sys.exit()
 
 	# init feature counter (for ID's)
 	j = 0

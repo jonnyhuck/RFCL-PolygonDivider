@@ -226,6 +226,11 @@ class PolygonDivider:
 		# run the tool
 		splitPoly(inFile, outFilePath, targetArea, absorbFlag, direction)
 
+		# add the result to the workspace
+		layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+		if not layer.isValid():
+  			print "Layer failed to load!"
+
 		#--------------------------------------------------------------JJH
 
 
