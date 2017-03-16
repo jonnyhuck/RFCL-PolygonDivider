@@ -28,6 +28,7 @@ import resources
 from polygondivider_dialog import PolygonDividerDialog
 import os.path
 from squareishPolygonDividerQGIS import splitPoly
+from qgis.core import QgsVectorLayer
 
 
 class PolygonDivider:
@@ -197,7 +198,6 @@ class PolygonDivider:
 	self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
 	# launch file browser for output file button - link to function
-	self.dlg.lineEdit_2.clear()
 	self.dlg.pushButton.clicked.connect(self.select_output_file)
 
 	#----------------------------------------------------------------------JJH
@@ -219,7 +219,7 @@ class PolygonDivider:
 		# get user settings
 		inFile = layers[self.dlg.comboBox.currentIndex()]
 		outFilePath = self.dlg.lineEdit_2.text()
-		targetArea = self.dlg.lineEdit.text()
+		targetArea = float(self.dlg.lineEdit.text())
 		absorbFlag = self.dlg.checkBox.isChecked()
 		direction = self.dlg.comboBox_2.currentIndex()
 
@@ -240,11 +240,17 @@ class PolygonDivider:
 	# get filename from dialog	
 	filename = QFileDialog.getSaveFileName(self.dlg, "Select output file ","", '*.shp')
 	
-	# make sure that an extension was included
-	if filename[-4:] != '.shp':
-		filename += '.shp'
+	# verify that a name was selected
+	if filename != "":
 
-	# put the result in the text box on the dialog
-	self.dlg.lineEdit_2.setText(filename)
+		# clear previous value
+		self.dlg.lineEdit_2.clear()
+
+		# make sure that an extension was included
+		if filename[-4:] != '.shp':
+			filename += '.shp'
+
+		# put the result in the text box on the dialog
+		self.dlg.lineEdit_2.setText(filename)
 
 

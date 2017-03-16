@@ -2,6 +2,7 @@
 
 ## this is required to bring in qgis
 from qgis.core import *
+import qgis.utils
 from uuid import uuid4
 from math import sqrt
 

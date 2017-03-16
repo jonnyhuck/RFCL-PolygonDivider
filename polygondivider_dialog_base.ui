@@ -126,6 +126,9 @@
      <height>27</height>
     </rect>
    </property>
+   <property name="text">
+    <string>/home/jonnyhuck/Documents/test.shp</string>
+   </property>
   </widget>
   <widget class="QLabel" name="label_4">
    <property name="geometry">
