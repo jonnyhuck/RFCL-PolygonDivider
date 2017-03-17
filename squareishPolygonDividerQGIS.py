@@ -2,7 +2,7 @@
 
 ## this is required to bring in qgis
 from qgis.core import *
-import qgis.utils
+import qgis.utils, sys
 from uuid import uuid4
 from math import sqrt
 
@@ -330,12 +330,13 @@ def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal):
 	return getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal) - targetArea
 
 # --------------------------------- USER SETTINGS -------------------------------------- #
+forward_flag = True
+horizontal_flag = True
 
-
-def splitPoly(layer, outFilePath, targetArea, absorb_flag, direction):
+def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 
 	# initial settings
-	t = 0.1			# tolerance for function rooting - this is flexible now it has been divorced from the buffer
+	t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
 	buffer = 1e-6		# this is the buffer to ensure that an intersection occurs
 	
 	# set the direction (currently either 'h' or 'v')
@@ -363,10 +364,10 @@ def splitPoly(layer, outFilePath, targetArea, absorb_flag, direction):
 	subfeatures = []
 
 	# get the geometry from the shapefile (assumes one feature for now)
-#	layer = QgsVectorLayer(infile, "inFile", "ogr")
-#	if not layer.isValid():
-#		print "Input layer failed to load!"
-#		sys.exit()
+# 	layer = QgsVectorLayer(infile, "inFile", "ogr")
+# 	if not layer.isValid():
+# 		print "Input layer failed to load!"
+# 		sys.exit()
 
 	# init feature counter (for ID's)
 	j = 0

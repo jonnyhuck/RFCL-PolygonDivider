@@ -27,7 +27,7 @@ import resources
 # Import the code for the dialog
 from polygondivider_dialog import PolygonDividerDialog
 import os.path
-from squareishPolygonDividerQGIS import splitPoly
+from squareishPolygonDividerQGIS import runSplit
 from qgis.core import QgsVectorLayer
 
 
@@ -224,7 +224,7 @@ class PolygonDivider:
 		direction = self.dlg.comboBox_2.currentIndex()
 
 		# run the tool
-		splitPoly(inFile, outFilePath, targetArea, absorbFlag, direction)
+		runSplit(inFile, outFilePath, targetArea, absorbFlag, direction)
 
 		# add the result to the workspace
 		layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
