@@ -224,7 +224,7 @@ class PolygonDivider:
 			direction = self.dlg.comboBox_2.currentIndex()
 
 			# run the tool
-			runSplit(inFile, outFilePath, targetArea, absorbFlag, direction)
+			runSplit(self, inFile, outFilePath, targetArea, absorbFlag, direction)
 
 			# add the result to the workspace
 			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
@@ -232,6 +232,9 @@ class PolygonDivider:
 				 QgsMapLayerRegistry.instance().addMapLayer(layer)	
 			else:
 				iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
+				
+			# reset progress bar
+			self.dlg.progressBar.setValue(0)
 
 			#--------------------------------------------------------------JJH
 

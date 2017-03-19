@@ -1,6 +1,6 @@
 # ------------------------------ LOAD QGIS STANDALONE ---------------------------------- #
 
-## this is required to bring in qgis
+from PyQt4.QtCore import QVariant
 from qgis.core import *
 import qgis.utils, sys
 from uuid import uuid4
@@ -154,13 +154,6 @@ def splitPoly(polygon, splitter, horizontal):
 	* Returns exactly two polygons notionally referred to as being 'left' and 'right' of the cutline. 
 	* The relationship between them is that the 'right' polygon (the chip) is notionally cut from the 'left' one (the potato).
 	"""
-
-# 	print polygon.asPolygon()
-# 	print ""
-# 	print splitter
-# 	print "----------"
-# 	print ""
-
 
 	# need to take a deep copy  for the incoming polygon, as splitGeometry edits it directly...
 	poly = QgsGeometry(polygon)
@@ -332,7 +325,7 @@ def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal):
 forward_flag = True
 horizontal_flag = True
 
-def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
+def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 
 	# initial settings
 	t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
@@ -356,14 +349,38 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 	ERROR_FLAG_2 = False 	# tracks change direction from forward to backward (or vice versa) by switching forward_flag
 	ERROR_FLAG_3 = False	# tracks change cutline from horizontal to backward (or vice versa) by switching horizontal_flag
 
-	# shapefile to write out to
-	writer = QgsVectorFileWriter(outFilePath, "CP1250", QgsFields(), QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
-
+	# get fields from the input shapefile
+	fieldList = layer.fields()
+	
+	# add new fields for this tool (if they don't already exist)
+	try:
+		fieldList.field('ps_id')
+	except KeyError:
+		fieldList.append( QgsField('ps_id',QVariant.Int))
+	try:
+		fieldList.field('ps_uuid')
+	except KeyError:
+		fieldList.append( QgsField('ps_uuid', QVariant.String))
+	try:
+		fieldList.field('ps_area')
+	except KeyError:
+		fieldList.append( QgsField('ps_area', QVariant.Double))
+	
+	# create a new shapefile to write the results to
+	writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+	
 	# define this to ensure that it's global
 	subfeatures = []
 
 	# init feature counter (for ID's)
 	j = 0
+	
+	# how many sections will we have (for progress bar)
+	iter = layer.getFeatures()
+	totalArea = 0
+	for feat in iter:
+		totalArea += feat.geometry().area()
+	totalDivisions = totalArea // targetArea
 
 	# loop through all of the features in the input data
 	iter = layer.getFeatures()
@@ -390,7 +407,7 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 			#loop through the geometries
 			for poly in subfeatures:
 
-				# how many polygons are we going to have to chop off? Will be used for progress bar
+				# how many polygons are we going to have to chop off?
 				nPolygons = int(shapelyPolygon.area() // targetArea)
 
 				# (needs to be at least 1...)
@@ -680,6 +697,9 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 						fet.setGeometry(right)
 						writer.addFeature(fet)
 						j+=1
+						
+						# update progress bar
+						self.dlg.progressBar.setValue(j / totalDivisions * 100)
 
 					# store any offcut from the slice
 	# 				o.write({'geometry': mapping(initialSlice), 'properties': {'id': j, 'uuid': str(uuid4()), 'area': initialSlice.area}})
@@ -687,6 +707,9 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 					fet.setGeometry(initialSlice)
 					writer.addFeature(fet)
 					j+=1
+					
+					# update progress bar
+					self.dlg.progressBar.setValue(j / totalDivisions * 100)
 				try:
 					# store any offcut from the polygon
 	# 				o.write({'geometry': mapping(poly), 'properties': {'id': j, 'uuid': str(uuid4()), 'area': poly.area}})
@@ -694,6 +717,9 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 					fet.setGeometry(poly)
 					writer.addFeature(fet)
 					j+=1
+					
+					# update progress bar
+					self.dlg.progressBar.setValue(j / totalDivisions * 100)
 				except:
 					pass
 		else:
