@@ -162,8 +162,9 @@ def splitPoly(polygon, splitter, horizontal, forward):
 	
 	# add poly (which might be a multipolygon) to the polys array
 	if poly.isMultipart():
+		print "multi!"
 		multiGeom = QgsGeometry()
-		multiGeom = feat.asMultiPolygon()
+		multiGeom = poly.asMultiPolygon()
 		for i in multiGeom:
 			polys.append(QgsGeometry().fromPolygon(i))
 	else:
@@ -242,7 +243,7 @@ def splitPoly(polygon, splitter, horizontal, forward):
 						maxy = p
 						maxyi = i
 					elif p == maxy:		# if there is a tie for which is the rightest, get the rightest in the other dimension
-						if polys[i].boundingBox().xMaximum() > polys[minyi].boundingBox().xMaximum():
+						if polys[i].boundingBox().xMaximum() > polys[maxyi].boundingBox().xMaximum():
 							maxyi = i
 				right = polys.pop(maxyi)
 	
@@ -321,7 +322,7 @@ def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal, forwar
 
 # --------------------------------- USER SETTINGS -------------------------------------- #
 
-def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
+def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progress):
 
 	# initial settings
 	t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
@@ -706,6 +707,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 						# increment feature counter and 
 						j+=1
 						self.dlg.progressBar.setValue(j / totalDivisions * 100)
+						progress.setValue(j / totalDivisions * 100)
 
 	 				## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
 	
@@ -731,6 +733,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 					# increment feature counter and 
 					j+=1
 					self.dlg.progressBar.setValue(j / totalDivisions * 100)
+					progress.setValue(j / totalDivisions * 100)
 
 				try:
 				
@@ -758,6 +761,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 					# increment feature counter and 
 					j+=1
 					self.dlg.progressBar.setValue(j / totalDivisions * 100)
+					progress.setValue(j / totalDivisions * 100)
 					
 				except:
 					pass

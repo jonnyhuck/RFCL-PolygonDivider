@@ -20,8 +20,8 @@
  *																		   *
  ***************************************************************************/
 """
-from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication
-from PyQt4.QtGui import QAction, QIcon, QFileDialog
+from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
+from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar
 # Initialize Qt resources from file resources.py
 import resources
 # Import the code for the dialog
@@ -31,9 +31,10 @@ from squareishPolygonDividerQGIS import runSplit
 from qgis.core import QgsVectorLayer, QgsMapLayerRegistry
 from qgis.gui import QgsMessageBar
 
-
 class PolygonDivider:
 	"""QGIS Plugin Implementation."""
+	
+	progress = QProgressBar()
 
 	def __init__(self, iface):
 		"""Constructor.
@@ -68,6 +69,7 @@ class PolygonDivider:
 		# TODO: We are going to let the user set this up in a future iteration
 		self.toolbar = self.iface.addToolBar(u'PolygonDivider')
 		self.toolbar.setObjectName(u'PolygonDivider')
+		
 
 	# noinspection PyMethodMayBeStatic
 	def tr(self, message):
@@ -191,7 +193,7 @@ class PolygonDivider:
 		# JJH: set up the dialog here--------------------------------------------
 	
 		# populate comboBox with the active layers
-		self.dlg.comboBox.clear()
+		self.dlg.comboBox.clear()	# need to clear here or it will add them all again every time the dialog is opened
 		layers = self.iface.legendInterface().layers()
 		layer_list = []
 		for layer in layers:
@@ -199,7 +201,7 @@ class PolygonDivider:
 		self.dlg.comboBox.addItems(layer_list)
 
 		# populate comboBox_2 with the possible directions
-		self.dlg.comboBox_2.clear()
+		self.dlg.comboBox_2.clear()	# need to clear here or it will add them all again every time the dialog is opened
 		self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
 		# launch file browser for output file button - link to function
@@ -217,7 +219,14 @@ class PolygonDivider:
 		if result:
 
 			# JH: RUN THE TOOL------------------------------------------------
-		
+			
+			# add the progress bar			
+			progressMessageBar = self.iface.messageBar().createMessage("Dividing Polygons...")
+			self.progress.setMaximum(100)
+			self.progress.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
+			progressMessageBar.layout().addWidget(self.progress)
+			self.iface.messageBar().pushWidget(progressMessageBar, level=QgsMessageBar.INFO)
+
 			# get user settings
 			inFile = layers[self.dlg.comboBox.currentIndex()]
 			outFilePath = self.dlg.lineEdit_2.text()
@@ -226,17 +235,21 @@ class PolygonDivider:
 			direction = self.dlg.comboBox_2.currentIndex()
 
 			# run the tool
-			runSplit(self, inFile, outFilePath, targetArea, absorbFlag, direction)
+			runSplit(self, inFile, outFilePath, targetArea, absorbFlag, direction, self.progress)
 
 			# add the result to the workspace
 			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
 			if layer.isValid():
 				 QgsMapLayerRegistry.instance().addMapLayer(layer)	
 			else:
-				iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
+				self.iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
 				
 			# reset progress bar
 			self.dlg.progressBar.setValue(0)
+			
+			# remove progress bar from the message bar and add in a success message
+			self.iface.messageBar().clearWidgets()
+			self.iface.messageBar().pushMessage("Success!", "Polygon Divided Successfully!", level=QgsMessageBar.INFO)
 
 			#--------------------------------------------------------------JJH
 
