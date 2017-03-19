@@ -352,19 +352,14 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 	# get fields from the input shapefile
 	fieldList = layer.fields()
 	
+	# TODO: NEED TO CHECK IF THEY ALREADY EXIST
 	# add new fields for this tool (if they don't already exist)
-	try:
-		fieldList.field('ps_id')
-	except KeyError:
-		fieldList.append( QgsField('ps_id',QVariant.Int))
-	try:
-		fieldList.field('ps_uuid')
-	except KeyError:
-		fieldList.append( QgsField('ps_uuid', QVariant.String))
-	try:
-		fieldList.field('ps_area')
-	except KeyError:
-		fieldList.append( QgsField('ps_area', QVariant.Double))
+# 	if fieldList.lookupField('ps_id') == -1:
+	fieldList.append(QgsField('ps_id',QVariant.Int))
+# 	if fieldList.lookupField('ps_uuid') == -1:
+	fieldList.append(QgsField('ps_uuid', QVariant.String))
+# 	if fieldList.lookupField('ps_area') == -1:
+	fieldList.append(QgsField('ps_area', QVariant.Double))
 	
 	# create a new shapefile to write the results to
 	writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
@@ -389,8 +384,10 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 		# verify that it is a polygon
 		if feat.geometry().wkbType() == QGis.WKBPolygon or feat.geometry().wkbType() == QGis.WKBMultiPolygon:	## if geom.type() == QGis.Polygon:
 	
-			# get the current polygon, sort out self intersections etc
-			# from here, we are dealing with a geometry, not a feature
+			# get the attributes to write out
+			currAttributes = feat.attributes()
+	
+			# get the current polygon, sort out self intersections etc. From here, we are dealing with a geometry, not a feature
 			shapelyPolygon = feat.geometry().buffer(0, 2)
 	
 			# make multipolygon into list of polygons...
@@ -477,7 +474,6 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 								# is it a W condition error?
 								if e.value == "Bracket is smaller than tolerance.":
 									# ...increase number of subdivisions and go around again
-	# 													print "...", e.value, "Increasing subdivisions from", nSubdivisions, "to", nSubdivisions+1
 									nSubdivisions += 1											
 									continue
 					
@@ -516,7 +512,6 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 								except BrentError as e:
 			
 									# ...increase number of subdivisions and go around again
-	# 													print "...", e.value, "Decreasing subdivisions from", nSubdivisions, "to", nSubdivisions+1
 									nSubdivisions -= 1											
 									continue
 			
@@ -588,10 +583,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 						# TODO: verify this doesn't need rounding
 						nSubdivisions = int(initialSlice.area() / targetArea) # shouldn't need rounding...
 						if nSubdivisions == 0:
-							nSubdivisions = 1
-	# 				
-	# 						# write to outer shapefile (just for debugging)
-	# 						outer.write({ 'geometry': mapping(initialSlice), 'properties': {} })									
+							nSubdivisions = 1							
 
 					#...then divide that into sections of targetArea
 					for k in range(nSubdivisions-1): 	# nCuts = nPieces - 1
@@ -690,36 +682,84 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 	
 						# put the residuals in the list to be processed
 						subfeatures += residuals
-	
-						# write right to the shapefile
-	# 					o.write({'geometry': mapping(right), 'properties': {'id': j, 'uuid': str(uuid4()), 'area': right.area}})
-						fet = QgsFeature()
-						fet.setGeometry(right)
-						writer.addFeature(fet)
-						j+=1
 						
-						# update progress bar
+						## WRITE TO SHAPEFILE
+	
+						# make a feature with the right schema
+						fet = QgsFeature()
+						fet.setFields(fieldList)
+						
+						# populate inherited attributes
+						for a in range(len(currAttributes)):
+							fet[a] = currAttributes[a]
+						
+						# populate new attributes
+						fet.setAttribute('ps_id', j)
+						fet.setAttribute('ps_uuid', str(uuid4()))
+						fet.setAttribute('ps_area', right.area())
+						
+						# add the geometry to the feature
+						fet.setGeometry(right)
+						
+						# write the feature to the out file
+						writer.addFeature(fet)
+						
+						# increment feature counter and 
+						j+=1
 						self.dlg.progressBar.setValue(j / totalDivisions * 100)
 
-					# store any offcut from the slice
-	# 				o.write({'geometry': mapping(initialSlice), 'properties': {'id': j, 'uuid': str(uuid4()), 'area': initialSlice.area}})
+	 				## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
+	
+					# make a feature with the right schema
 					fet = QgsFeature()
+					fet.setFields(fieldList)
+					
+					# populate inherited attributes
+					for a in range(len(currAttributes)):
+						fet[a] = currAttributes[a]
+					
+					# populate new attributes
+					fet.setAttribute('ps_id', j)
+					fet.setAttribute('ps_uuid', str(uuid4()))
+					fet.setAttribute('ps_area', initialSlice.area())
+					
+					# add the geometry to the feature
 					fet.setGeometry(initialSlice)
-					writer.addFeature(fet)
-					j+=1
 					
-					# update progress bar
+					# write the feature to the out file
+					writer.addFeature(fet)
+					
+					# increment feature counter and 
+					j+=1
 					self.dlg.progressBar.setValue(j / totalDivisions * 100)
+
 				try:
-					# store any offcut from the polygon
-	# 				o.write({'geometry': mapping(poly), 'properties': {'id': j, 'uuid': str(uuid4()), 'area': poly.area}})
+				
+					## WRITE  ANY OFFCUT FROM DIVISION TO SHAPEFILE
+	
+					# make a feature with the right schema
 					fet = QgsFeature()
-					fet.setGeometry(poly)
-					writer.addFeature(fet)
-					j+=1
+					fet.setFields(fieldList)
 					
-					# update progress bar
+					# populate inherited attributes
+					for a in range(len(currAttributes)):
+						fet[a] = currAttributes[a]
+					
+					# populate new attributes
+					fet.setAttribute('ps_id', j)
+					fet.setAttribute('ps_uuid', str(uuid4()))
+					fet.setAttribute('ps_area', poly.area())
+					
+					# add the geometry to the feature
+					fet.setGeometry(poly)
+					
+					# write the feature to the out file
+					writer.addFeature(fet)
+					
+					# increment feature counter and 
+					j+=1
 					self.dlg.progressBar.setValue(j / totalDivisions * 100)
+					
 				except:
 					pass
 		else:
