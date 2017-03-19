@@ -1,6 +1,7 @@
 # ------------------------------ LOAD QGIS STANDALONE ---------------------------------- #
 
 from PyQt4.QtCore import QVariant
+from qgis.gui import QgsMessageBar
 from qgis.core import *
 import qgis.utils, sys
 from uuid import uuid4
@@ -322,7 +323,7 @@ def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal, forwar
 
 # --------------------------------- USER SETTINGS -------------------------------------- #
 
-def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progress):
+def runSplit(self, layer, outFilePath, target_area, absorb_flag, direction, progress):
 
 	# initial settings
 	t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
@@ -372,7 +373,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 	totalArea = 0
 	for feat in iter:
 		totalArea += feat.geometry().area()
-	totalDivisions = totalArea // targetArea
+	totalDivisions = totalArea // target_area
 
 	# loop through all of the features in the input data
 	iter = layer.getFeatures()
@@ -402,7 +403,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 			for poly in subfeatures:
 
 				# how many polygons are we going to have to chop off?
-				nPolygons = int(poly.area() // targetArea)
+				nPolygons = int(poly.area() // target_area)
 
 				# (needs to be at least 1...)
 				if nPolygons == 0:
@@ -410,10 +411,14 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 
 				# adjust the targetArea to reflect absorption if required
 				if absorb_flag:
-					targetArea += (poly.area() % targetArea) / nPolygons
+					targetArea = target_area + ((poly.area() % target_area) / nPolygons)
+				else:
+					targetArea = target_area
 	
 				# work out the size of a square with area = targetArea if required
 				sq = sqrt(targetArea)
+				
+				print poly.area(), targetArea + t, (poly.area() > targetArea + t)
 
 				# until there is no more dividing to do...						
 				while poly.area() > targetArea + t:
