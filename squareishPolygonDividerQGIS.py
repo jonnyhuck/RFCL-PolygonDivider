@@ -328,7 +328,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 	t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
 	buffer = 1e-6		# this is the buffer to ensure that an intersection occurs
 	
-	# set the direction (currently either 'h' or 'v')
+	# set the direction (horizontal or vertical)
 	if direction < 2:
 		horizontal_flag = True 
 	else:
@@ -384,25 +384,25 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 			# get the attributes to write out
 			currAttributes = feat.attributes()
 	
-			# get the current polygon, sort out self intersections etc. From here, we are dealing with a geometry, not a feature
-			shapelyPolygon = feat.geometry().buffer(0, 2)
+			# extract the geometry and sort out self intersections etc. with a buffer of 0m
+			bufferedPolygon = feat.geometry().buffer(0, 15)
 	
 			# make multipolygon into list of polygons...
 			subfeatures = []
-			if shapelyPolygon.isMultipart():
+			if bufferedPolygon.isMultipart():
 				multiGeom = QgsGeometry()
-				multiGeom = shapelyPolygon.asMultiPolygon()
+				multiGeom = bufferedPolygon.asMultiPolygon()
 				for i in multiGeom:
 					subfeatures.append(QgsGeometry().fromPolygon(i))
 			else:
 				# ...OR load the feature into a list of one (it may be extended in the course of splitting if we create noncontiguous offcuts) and loop through it
-				subfeatures.append(shapelyPolygon)
+				subfeatures.append(bufferedPolygon)	
 		
 			#loop through the geometries
 			for poly in subfeatures:
 
 				# how many polygons are we going to have to chop off?
-				nPolygons = int(shapelyPolygon.area() // targetArea)
+				nPolygons = int(poly.area() // targetArea)
 
 				# (needs to be at least 1...)
 				if nPolygons == 0:
@@ -410,7 +410,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 
 				# adjust the targetArea to reflect absorption if required
 				if absorb_flag:
-					targetArea += (shapelyPolygon.area() % targetArea) / nPolygons
+					targetArea += (poly.area() % targetArea) / nPolygons
 	
 				# work out the size of a square with area = targetArea if required
 				sq = sqrt(targetArea)
@@ -581,7 +581,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 
 						# what is the nearest number of subdivisions of targetArea that could be extracted from that slice? (must be at least 1)
 						# TODO: verify this doesn't need rounding
-						nSubdivisions = int(initialSlice.area() / targetArea) # shouldn't need rounding...
+						nSubdivisions = int(initialSlice.area() // targetArea) # shouldn't need rounding...
 						if nSubdivisions == 0:
 							nSubdivisions = 1							
 
