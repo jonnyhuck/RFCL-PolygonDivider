@@ -287,9 +287,8 @@ def splitPoly(polygon, splitter, horizontal, forward):
 		# return the two sections (left is the potato, right is the chip...), plus any noncontiguous polygons
 		return left, right, noncontiguous
 	else:
-		
-		# TODO: need to print error here
-		print "WHOOPS!", res, len(polys)
+		# log error
+		QgsMessageLog.logMessage("FAIL: Polygon division failed.", level=QgsMessageLog.CRITICAL)
 		
 
 def getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
@@ -484,7 +483,8 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 						# if that didn't work, try decreasing instead of increasing								
 						if ERROR_FLAG_0:
 			
-							print "Increasing number of subdivisions didn't work, try decreasing..."
+							# log message
+							QgsMessageLog.logMessage("Increasing number of subdivisions didn't work, try decreasing... (Division)", level=QgsMessageLog.WARNING)
 			
 							nSubdivisions = nSubdivisions2	# reset
 							limit = 1
@@ -519,14 +519,15 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 							ERROR_FLAG_0 = False
 							ERROR_FLAG_1 = False
 			
-							print j, "Decreasing number of subdivisions didn't work, try playing with direction..."
+							# log message
+							QgsMessageLog.logMessage("Decreasing number of subdivisions didn't work, try playing with direction... (Division)", level=QgsMessageLog.WARNING)
 				
 							# switch the movement direction 
 							if ERROR_FLAG_2 == False:
 					
 								# log that this has been tried
 								ERROR_FLAG_2 = True
-								print j, "Reversing movement direction (Division):", not forward_flag
+								QgsMessageLog.logMessage("Reversing movement direction (Division)", level=QgsMessageLog.WARNING)
 
 								# reverse the direction of movement and try again
 								forward_flag = not forward_flag
@@ -540,7 +541,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 					
 								# log that this has been tried
 								ERROR_FLAG_3 = True
-								print j, "Reversing cutline direction (Division):", not horizontal_flag
+								QgsMessageLog.logMessage("Reversing cutline direction (Division)", level=QgsMessageLog.WARNING)
 
 								# reverse the cutline direction and try again
 								horizontal_flag = not horizontal_flag
@@ -548,7 +549,8 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 								
 							# if none of the above worked, dump to shapefile
 							else:
-								print "tried everything, giving up." #, e.value
+								QgsMessageLog.logMessage("Tried everything but can't divide the polygons in this layer.", level=QgsMessageLog.CRITICAL)
+								self.iface.messageBar().pushMessage("Sorry, I tried everything but I can't divide the polygons in this layer. Can you simplify it and try again?", level=QgsMessageBar.CRITICAL)
 								raise BrentError("Failed.") # go and print the map out
 
 						# if it worked, reset the flags
@@ -619,7 +621,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 					
 								# if it is a W condition error, double the tolerance
 								if e.value == "Bracket is smaller than tolerance.":
-									print e.value, ": increasing tolerance"
+									QgsMessageLog.logMessage(e.value + ": increasing tolerance (Subdivision)", level=QgsMessageLog.WARNING)
 					
 									# double the tolerance and try again
 									tol *= 2
@@ -639,7 +641,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 
 							# log that this has been tried
 							ERROR_FLAG_2 = True
-							print j, e.value, "Reversing movement direction (Subdivision):", not forward_flag
+							QgsMessageLog.logMessage(e.value + ": Reversing movement direction (Subdivision)", level=QgsMessageLog.WARNING)
 
 							# reverse the direction of movement and try again
 							forward_flag = not forward_flag
@@ -653,7 +655,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 
 							# log that this has been tried
 							ERROR_FLAG_3 = True
-							print j, e.value, "Reversing cutline direction (Subdivision):", not horizontal_flag
+							QgsMessageLog.logMessage(e.value + ": Reversing cutline direction (Subdivision):", level=QgsMessageLog.WARNING)
 
 							# reverse the cutline direction and pass back to the outer division to try again in the opposite direction (otherwise we would get long thin strips, not squares)
 							horizontal_flag = not horizontal_flag
@@ -760,4 +762,5 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 				except:
 					pass
 		else:
-			print "Whoops, that dataset isn't Polygons!"
+			QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", level=QgsMessageLog.CRITICAL)
+			self.iface.messageBar().pushMessage("Whoops! That dataset isn't polygons!", level=QgsMessageBar.CRITICAL)
