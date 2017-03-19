@@ -33,8 +33,6 @@ from qgis.gui import QgsMessageBar
 
 class PolygonDivider:
 	"""QGIS Plugin Implementation."""
-	
-	progress = QProgressBar()
 
 	def __init__(self, iface):
 		"""Constructor.
@@ -222,9 +220,10 @@ class PolygonDivider:
 			
 			# add the progress bar			
 			progressMessageBar = self.iface.messageBar().createMessage("Dividing Polygons...")
-			self.progress.setMaximum(100)
-			self.progress.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
-			progressMessageBar.layout().addWidget(self.progress)
+			progress = QProgressBar()
+			progress.setMaximum(100)
+			progress.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
+			progressMessageBar.layout().addWidget(progress)
 			self.iface.messageBar().pushWidget(progressMessageBar, level=QgsMessageBar.INFO)
 
 			# get user settings
@@ -233,23 +232,27 @@ class PolygonDivider:
 			targetArea = float(self.dlg.lineEdit.text())
 			absorbFlag = self.dlg.checkBox.isChecked()
 			direction = self.dlg.comboBox_2.currentIndex()
-
-			# run the tool
-			runSplit(self, inFile, outFilePath, targetArea, absorbFlag, direction, self.progress)
-
-			# add the result to the workspace
-			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
-			if layer.isValid():
-				 QgsMapLayerRegistry.instance().addMapLayer(layer)	
-			else:
-				self.iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
-				
-			# reset progress bar
-			self.dlg.progressBar.setValue(0)
 			
-			# remove progress bar from the message bar and add in a success message
-			self.iface.messageBar().clearWidgets()
-			self.iface.messageBar().pushMessage("Success!", "Polygon Divided Successfully!", level=QgsMessageBar.INFO)
+			try:
+
+				# run the tool
+				runSplit(self, inFile, outFilePath, targetArea, absorbFlag, direction, progress)
+
+				# add the result to the workspace
+				layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+				if layer.isValid():
+					 QgsMapLayerRegistry.instance().addMapLayer(layer)	
+				else:
+					self.iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
+				
+				self.iface.messageBar().pushMessage("Success!", "Polygon Divided Successfully!", level=QgsMessageBar.INFO)
+				
+			finally:	
+				# reset progress bar
+				self.dlg.progressBar.setValue(0)
+			
+				# remove progress bar from the message bar and add in a success message
+				self.iface.messageBar().clearWidgets()
 
 			#--------------------------------------------------------------JJH
 
