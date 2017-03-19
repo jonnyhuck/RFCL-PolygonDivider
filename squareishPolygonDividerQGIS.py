@@ -17,7 +17,6 @@ from math import sqrt
 * TODO'S:
 *  - Where / how often should we calculate the desired area?
 *  - How should we be dealing with reversing direction for subdivision? Undoing changes seems to make it worse...
-*  - Handle MultiPolygons (split into list)
 *
 * NEED TO:
 *  - Need to re-think how to deal with problems in subdivision - perhaps need to calculate all subdivisions then save all at once so we can roll back?
@@ -362,12 +361,6 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 
 	# define this to ensure that it's global
 	subfeatures = []
-
-	# get the geometry from the shapefile (assumes one feature for now)
-# 	layer = QgsVectorLayer(infile, "inFile", "ogr")
-# 	if not layer.isValid():
-# 		print "Input layer failed to load!"
-# 		sys.exit()
 
 	# init feature counter (for ID's)
 	j = 0
