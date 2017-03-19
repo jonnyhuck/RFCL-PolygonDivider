@@ -391,7 +391,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction, progr
 			subfeatures = []
 			if shapelyPolygon.isMultipart():
 				multiGeom = QgsGeometry()
-				multiGeom = feat.asMultiPolygon()
+				multiGeom = shapelyPolygon.asMultiPolygon()
 				for i in multiGeom:
 					subfeatures.append(QgsGeometry().fromPolygon(i))
 			else:
