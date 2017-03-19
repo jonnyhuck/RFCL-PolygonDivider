@@ -357,7 +357,7 @@ def runSplit(layer, outFilePath, targetArea, absorb_flag, direction):
 	ERROR_FLAG_3 = False	# tracks change cutline from horizontal to backward (or vice versa) by switching horizontal_flag
 
 	# shapefile to write out to
-	writer = QgsVectorFileWriter(outFilePath, "CP1250", QgsFields(), QGis.WKBPolygon, None, "ESRI Shapefile")
+	writer = QgsVectorFileWriter(outFilePath, "CP1250", QgsFields(), QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 
 	# define this to ensure that it's global
 	subfeatures = []
