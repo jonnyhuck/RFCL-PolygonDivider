@@ -29,6 +29,7 @@ from polygondivider_dialog import PolygonDividerDialog
 import os.path
 from squareishPolygonDividerQGIS import runSplit
 from qgis.core import QgsVectorLayer, QgsMapLayerRegistry
+from qgis.gui import QgsMessageBar
 
 
 class PolygonDivider:
@@ -183,7 +184,9 @@ class PolygonDivider:
 
 
 	def run(self):
-		"""Run method that performs all the real work"""
+		"""
+		* Run method that performs all the real work
+		"""
 
 		# JJH: set up the dialog here--------------------------------------------
 	
@@ -228,13 +231,15 @@ class PolygonDivider:
 			if layer.isValid():
 				 QgsMapLayerRegistry.instance().addMapLayer(layer)	
 			else:
-				print "Layer failed to load!"
+				iface.messageBar().pushMessage("Error", "Failed to open resulting layer", level=QgsMessageBar.CRITICAL)
 
-		#--------------------------------------------------------------JJH
+			#--------------------------------------------------------------JJH
 
 
 	def select_output_file(self):
-		"""JJH:Open file browser"""
+		"""
+		* JJH:Open file browser
+		"""
 
 		# get filename from dialog	
 		filename = QFileDialog.getSaveFileName(self.dlg, "Select output file ","", '*.shp')
