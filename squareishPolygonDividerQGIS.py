@@ -452,7 +452,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 						# make a backup copy to reset if we move from ERROR_FLAG_0 to ERROR_FLAG_1
 						nSubdivisions2 = nSubdivisions
 			
-						# now use brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal cut)
+						'''now use brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal cut)'''
 			
 						# if it fails, try increasing nSubdivisions (k) until it works or you get a different error
 						while True:

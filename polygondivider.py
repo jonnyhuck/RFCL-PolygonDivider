@@ -191,6 +191,7 @@ class PolygonDivider:
 		# JJH: set up the dialog here--------------------------------------------
 	
 		# populate comboBox with the active layers
+		self.dlg.comboBox.clear()
 		layers = self.iface.legendInterface().layers()
 		layer_list = []
 		for layer in layers:
@@ -198,6 +199,7 @@ class PolygonDivider:
 		self.dlg.comboBox.addItems(layer_list)
 
 		# populate comboBox_2 with the possible directions
+		self.dlg.comboBox_2.clear()
 		self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
 		# launch file browser for output file button - link to function
