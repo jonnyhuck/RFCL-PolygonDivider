@@ -7,20 +7,17 @@ from uuid import uuid4
 from math import sqrt
 
 """
-* QGIS Implementation for ScriptRunner
 * This script divides a polygon into squareish sections of a specified size
 *
 * ERROR WE CAN FIX BY ADJUSTING TOLERANCE / N_SUBDIVISIONS:
 *  - Bracket is smaller than tolerance: the shape got smaller? OR got dramatically bigger. Can we check this? This is where we just want to cut at the last location that worked and re-calculate the division stuff.
-*  - Any other errors are be passed to the more brute-force handlers (reversing direction etc)
 *  
 * TODO'S:
 *  - Where / how often should we calculate the desired area?
 *  - How should we be dealing with reversing direction for subdivision? Undoing changes seems to make it worse...
-*
-* NEED TO:
 *  - Need to re-think how to deal with problems in subdivision - perhaps need to calculate all subdivisions then save all at once so we can roll back?
 *  - Look at saving last good bounds to narrow search interval after adjusting tolerance? Maybe use bisection to minimise the adjustment in tolerance?
+*  - More minor TODO's throughout the code...
 *
 * @author jonnyhuck
 *
@@ -36,7 +33,7 @@ class BrentError(Exception):
 		return repr(self.value)
 
 
-def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetArea, horizontal):
+def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
 	"""
 	* Brent's Method, following Wikipedia's article algorithm.
 	* 
@@ -49,6 +46,8 @@ def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetAr
 	* - fixedCoord1 is the the first coordinate in the fixed dimension.
 	* - fixedCoord2 is the the second coordinate in the fixed dimension.
 	* - targetArea is the desired area of the section to cut off geom.
+	* - horizontal or vertical cut - True / False respectively
+	* - forward (left-right or bottom top) cut or backward (right-left or top-bottom) - True / False respectively
 	"""
 
 	## SET SOME VALUES
@@ -63,12 +62,12 @@ def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetAr
 		raise BrentError("Initial bracket smaller than system epsilon.")
 
 	# check lower bound
-	fa = f(xa, geom, fixedCoord1, fixedCoord2, targetArea, horizontal)        # first function call
+	fa = f(xa, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)        # first function call
 	if abs(fa) < ftol:
 		raise BrentError("Root is equal to the lower bracket")
 
 	# check upper bound
-	fb = f(xb, geom, fixedCoord1, fixedCoord2, targetArea, horizontal)        # second function call
+	fb = f(xb, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)        # second function call
 	if abs(fb) < ftol:
 		raise BrentError("Root is equal to the upper bracket")
 	
@@ -115,7 +114,7 @@ def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetAr
 		## THE ABOVE BLOCK USED BRENT'S METHOD TO GET A SUGGESTED VALUE FOR S, THE BELOW BLOCK CHECKS IF IT IS GOOD, AND IF NOT SEEKS A NEW VALUE
 
 		# get the value from f using the new xs value
-		fs = f(xs, geom, fixedCoord1, fixedCoord2, targetArea, horizontal)	# repeated function call
+		fs = f(xs, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)	# repeated function call
 
 		# if the value (ideally 0) is less than the specified tolerance, return
 		if abs(fs) < ftol:
@@ -148,7 +147,7 @@ def brent(xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetAr
 	return xs	# NB: increasing the number of iterations doesn't seem to get any closer
 
 
-def splitPoly(polygon, splitter, horizontal):
+def splitPoly(polygon, splitter, horizontal, forward):
 	"""
 	* Split a Polygon with a LineString
 	* Returns exactly two polygons notionally referred to as being 'left' and 'right' of the cutline. 
@@ -175,7 +174,7 @@ def splitPoly(polygon, splitter, horizontal):
 	
 	# verify that it worked and that more than one polygon was returned
 	if res == 0 and len(polys) >1:
-		if forward_flag: ### from bottom left
+		if forward: ### from bottom left
 			if horizontal:	## cut from the bottom
 
 				# left is the top one
@@ -222,7 +221,7 @@ def splitPoly(polygon, splitter, horizontal):
 							minxi = i
 				right = polys.pop(minxi)
 		
-		else:	### cut from top right (forward_flag is false)
+		else:	### cut from top / right (forward_flag is false)
 
 			if horizontal:	## cut from the top
 
@@ -293,7 +292,7 @@ def splitPoly(polygon, splitter, horizontal):
 		print "WHOOPS!", res, len(polys)
 		
 
-def getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal):
+def getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
 	"""
 	* Splits a polygon to a defined distance from the minimum value for the selected dimension and
 	*  returns the area of the resultng polygon
@@ -306,24 +305,22 @@ def getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal):
 		splitter = [QgsPoint(sliceCoord, fixedCoord1), QgsPoint(sliceCoord, fixedCoord2)] # vertical split
 
 	# split the polygon
-	left, right, residual = splitPoly(poly, splitter, horizontal)
+	left, right, residual = splitPoly(poly, splitter, horizontal, forward)
 	
 	# return the area of the bit you cut off
 	return right.area()
 
 
-def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal):
+def f(sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
 	"""
 	* Split a Polygon with a LineString, returning the area of the polygon to the right of the split
 	* returns the area of the polygon on the right of the splitter line
 	"""
 	
 	# return the difference between the resulting polygon area (right of the line) and the desired area
-	return getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal) - targetArea
+	return getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward) - targetArea
 
 # --------------------------------- USER SETTINGS -------------------------------------- #
-forward_flag = True
-horizontal_flag = True
 
 def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 
@@ -438,9 +435,9 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 
 						# this is the resulting area of a slice the width of sq from the polygon
 						if forward_flag:
-							sqArea = getSliceArea(interval[0] + sq - buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag)	# cutting from bottom/left
+							sqArea = getSliceArea(interval[0] + sq - buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from bottom/left
 						else:
-							sqArea = getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag)	# cutting from top/right
+							sqArea = getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from top/right
 
 						# what is the nearest number of subdivisions of targetArea that could be extracted from that slice?
 						nSubdivisions = int(round(sqArea / targetArea))
@@ -463,7 +460,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 							# try to split using this new value
 							try:
 								# try to zero the equation
-								result = brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag)
+								result = brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag, forward_flag)
 
 								# if it worked (no exception raised) then exit this while loop and carry on
 								break
@@ -503,7 +500,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 								# try to split using this new value
 								try:
 									# try to zero the equation
-									result = brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag)
+									result = brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag, forward_flag)
 
 									# if it worked (no exception raised) then exit this while loop and carry on
 									break
@@ -567,7 +564,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 							line = [QgsPoint(result, fixedCoords[0]), QgsPoint(result, fixedCoords[1])] # vertical split
 
 						# calculate the resulting polygons - poly will be sliced again, initialSlice will be subdivided
-						poly, initialSlice, residuals = splitPoly(poly, line, horizontal_flag)
+						poly, initialSlice, residuals = splitPoly(poly, line, horizontal_flag, forward_flag)
 	
 						# put the residuals in the list to be processed
 						subfeatures += residuals
@@ -614,7 +611,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 							try:									
 			
 								# search for result
-								sliceResult = brent(sliceInterval[0], sliceInterval[1], 1e-6, tol, 500, initialSlice, sliceFixedCoords[0], sliceFixedCoords[1], targetArea, sliceHorizontal)
+								sliceResult = brent(sliceInterval[0], sliceInterval[1], 1e-6, tol, 500, initialSlice, sliceFixedCoords[0], sliceFixedCoords[1], targetArea, sliceHorizontal, forward_flag)
 				
 								# stop searching if result is found
 								break
@@ -678,7 +675,7 @@ def runSplit(self, layer, outFilePath, targetArea, absorb_flag, direction):
 							sliceLine = [QgsPoint(sliceFixedCoords[0], sliceResult), QgsPoint(sliceFixedCoords[1], sliceResult)] 	# vertical split
 
 						# calculate the resulting polygons - initialSlice becomes left (to be chopped again)
-						initialSlice, right, residuals = splitPoly(initialSlice, sliceLine, sliceHorizontal)
+						initialSlice, right, residuals = splitPoly(initialSlice, sliceLine, sliceHorizontal, forward_flag)
 	
 						# put the residuals in the list to be processed
 						subfeatures += residuals
