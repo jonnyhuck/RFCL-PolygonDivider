@@ -417,8 +417,6 @@ def runSplit(self, layer, outFilePath, target_area, absorb_flag, direction, prog
 	
 				# work out the size of a square with area = targetArea if required
 				sq = sqrt(targetArea)
-				
-				print poly.area(), targetArea + t, (poly.area() > targetArea + t)
 
 				# until there is no more dividing to do...						
 				while poly.area() > targetArea + t:
@@ -553,11 +551,41 @@ def runSplit(self, layer, outFilePath, target_area, absorb_flag, direction, prog
 								horizontal_flag = not horizontal_flag
 								continue
 								
-							# if none of the above worked, dump to shapefile
+							# if none of the above worked, just skip it and move to a new feature
 							else:
-								QgsMessageLog.logMessage("Tried everything but can't divide the polygons in this layer.", level=QgsMessageLog.CRITICAL)
-								self.iface.messageBar().pushMessage("Sorry, I tried everything but I can't divide the polygons in this layer. Can you simplify it and try again?", level=QgsMessageBar.CRITICAL)
-								raise BrentError("Failed.") # go and print the map out
+								print "failed", feat['LOR_DESC']
+								
+								## WRITE THE UNSPLITTABLE POLYGON TO THE SHAPEFILE ANYWAY
+	
+								# make a feature with the right schema
+								fet = QgsFeature()
+								fet.setFields(fieldList)
+					
+								# populate inherited attributes
+								for a in range(len(currAttributes)):
+									fet[a] = currAttributes[a]
+					
+								# populate new attributes
+								fet.setAttribute('ps_id', j)
+								fet.setAttribute('ps_uuid', str(uuid4()))
+								fet.setAttribute('ps_area', poly.area())
+					
+								# add the geometry to the feature
+								fet.setGeometry(poly)
+					
+								# write the feature to the out file
+								writer.addFeature(fet)
+					
+								# increment feature counter and 
+								j+=1
+								self.dlg.progressBar.setValue(j / totalDivisions * 100)
+								progress.setValue(j / totalDivisions * 100)
+								
+# 								QgsMessageLog.logMessage("Tried everything but can't divide the polygons in this layer.", level=QgsMessageLog.CRITICAL)
+# 								self.iface.messageBar().pushMessage("Sorry, I tried everything but I can't divide the polygons in this layer. Can you simplify it and try again?", level=QgsMessageBar.CRITICAL)
+# 								raise BrentError("Failed.") # go and print the map out
+
+								continue
 
 						# if it worked, reset the flags
 						ERROR_FLAG_0 = False
