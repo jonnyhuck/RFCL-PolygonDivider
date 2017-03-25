@@ -1269,6 +1269,9 @@ class PolygonDivider:
 			text=self.tr(u'Divide Polygons'),
 			callback=self.run,
 			parent=self.iface.mainWindow())
+			
+		# launch file browser for output file button - link to function
+		self.dlg.pushButton.clicked.connect(self.select_output_file)
 
 
 	def unload(self):
@@ -1332,8 +1335,9 @@ class PolygonDivider:
 		self.dlg.comboBox_2.clear() # need to clear here or it will add them all again every time the dialog is opened
 		self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
+		# JJH: Moved this upward, otherwise it adds an additional dialog each time you open it
 		# launch file browser for output file button - link to function
-		self.dlg.pushButton.clicked.connect(self.select_output_file)
+# 		self.dlg.pushButton.clicked.connect(self.select_output_file)
 
 		#----------------------------------------------------------------------JJH
 
