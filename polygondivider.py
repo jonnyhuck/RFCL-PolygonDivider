@@ -924,9 +924,9 @@ class ExampleWorker(AbstractWorker):
 							j+=1
 
 							# update progress bar if required
-							if j // totalDivisions * 100 > currProgress:
-								currProgress = j // totalDivisions * 100
-								self.progress.emit(j // totalDivisions * 100)
+							if int((j*1.0) / totalDivisions * 100) > currProgress:
+								currProgress = int((j*1.0) / totalDivisions * 100)
+								self.progress.emit(currProgress)
 
 
 						## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
@@ -954,9 +954,9 @@ class ExampleWorker(AbstractWorker):
 						j+=1
 
 						# update progress bar if required
-						if j // totalDivisions * 100 > currProgress:
-							currProgress = j // totalDivisions * 100
-							self.progress.emit(j // totalDivisions * 100)
+						if int((j*1.0) / totalDivisions * 100) > currProgress:
+							currProgress = int((j*1.0) / totalDivisions * 100)
+							self.progress.emit(currProgress)
 
 					try:
 			
@@ -985,9 +985,10 @@ class ExampleWorker(AbstractWorker):
 						j+=1
 
 						# update progress bar if required
-						if j // totalDivisions * 100 > currProgress:
-							currProgress = j // totalDivisions * 100
-							self.progress.emit(j // totalDivisions * 100)
+						if int((j*1.0) / totalDivisions * 100) > currProgress:
+							currProgress = int((j*1.0) / totalDivisions * 100)
+							self.progress.emit(currProgress)
+
 				
 					except:
 						# this just means that there is no offcut, which is no problem!
