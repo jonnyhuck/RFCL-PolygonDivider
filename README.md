@@ -17,8 +17,8 @@ Each output polygon inherits all of the attributes from its parent, as well as t
 * `ps_id`: a unique integer ID for each output polygon
 * `ps_uuid`: a version 4 [uuid](https://en.wikipedia.org/wiki/Universally_unique_identifier)
 * `ps_area`: the area of the polygon
-* `ps_repPointX`: the X coordinate of a point gurranteed to be within the resulting polygon *(not necessarily the geometric centroid, as this is not gurranteed to be within the resulting polygon)*
-* `ps_repPointY`: the X coordinate of a point gurranteed to be within the resulting polygon *(not necessarily the geometric centroid, as this is not gurranteed to be within the resulting polygon)*
+* `ps_repPointX`: the X coordinate of a point guaranteed to be within the resulting polygon *(not necessarily the geometric centroid, as this is not gurranteed to be within the resulting polygon)*
+* `ps_repPointY`: the Y coordinate of a point guaranteed to be within the resulting polygon *(not necessarily the geometric centroid, as this is not gurranteed to be within the resulting polygon)*
 
 The software should work well on some quite complex polygons:
 
@@ -28,7 +28,7 @@ The software should work well on some quite complex polygons:
 
 ![complex division example 1](images/complex2.png)
 
-In cases where the algorithm finds the geometry difficult to divide, it will make the polygons slightly less square and more rectangular (as is illustrated in both of the abpve examples). If you find that it doesn't manage to divide a certain geometry at all, then you can normally remedy this by simplifying it a little.
+In cases where the algorithm finds the geometry difficult to divide, it will make the polygons slightly less square and more rectangular (as is illustrated in both of the above examples). If you find that it doesn't manage to divide a certain geometry at all, then you can normally remedy this by simplifying it a little.
 
 Please do get in touch with a copy of any polygons that do not work, they will help us continue to improve this plugin!
 
