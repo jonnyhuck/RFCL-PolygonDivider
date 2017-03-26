@@ -311,7 +311,8 @@ class ExampleWorker(AbstractWorker):
 	
 		# add poly (which might be a multipolygon) to the polys array
 		if poly.isMultipart():
-			print "multi!"
+			## TODO: I think that this is where we might be getting that odd error on no absorb
+			QgsMessageLog.logMessage("Splitting a MultiPolygon", level=QgsMessageLog.Info)
 			multiGeom = QgsGeometry()
 			multiGeom = poly.asMultiPolygon()
 			for i in multiGeom:
@@ -1008,7 +1009,8 @@ class ExampleWorker(AbstractWorker):
 		
 		
 	def cleanup(self):
-		print "cleanup here"
+# 		print "cleanup here"
+		pass
 
 
 class UserAbortedNotification(Exception):
