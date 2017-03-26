@@ -39,32 +39,21 @@
 """
 
 from PyQt4.QtCore import QVariant, QObject, pyqtSignal
-from abstractworker import AbstractWorker
 from qgis.core import *
 import qgis.utils, sys
 from uuid import uuid4
 from math import sqrt
 
-
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt, QThread
 from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar, QPushButton
 import resources, os.path, traceback
 from polygondivider_dialog import PolygonDividerDialog
-from qgis.core import QgsVectorLayer, QgsMapLayerRegistry
+from qgis.core import QgsVectorLayer, QgsMapLayerRegistry, QgsMessageLog
 from qgis.gui import QgsMessageBar
-
-
-import time
-from time import sleep
-import traceback
-from random import randint
 
 from PyQt4 import QtCore
-from PyQt4.QtCore import QThread, Qt
-from PyQt4.QtGui import QProgressBar, QPushButton
 
-from qgis.core import QgsMessageLog
-from qgis.gui import QgsMessageBar
+
 
 
 
