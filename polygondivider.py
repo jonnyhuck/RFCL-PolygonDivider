@@ -897,12 +897,12 @@ class ExampleWorker(AbstractWorker):
 								fet[a] = currAttributes[a]
 					
 							# calculate representative point
-							pt = poly.pointOnSurface().asPoint()
+							pt = right.pointOnSurface().asPoint()
 						
 							# populate new attributes
 							fet.setAttribute('ps_id', j)
 							fet.setAttribute('ps_uuid', str(uuid4()))
-							fet.setAttribute('ps_area', poly.area())
+							fet.setAttribute('ps_area', right.area())
 							fet.setAttribute('ps_repPointX', pt[0])
 							fet.setAttribute('ps_repPointY', pt[1])
 					
@@ -932,12 +932,12 @@ class ExampleWorker(AbstractWorker):
 							fet[a] = currAttributes[a]
 				
 						# calculate representative point
-						pt = poly.pointOnSurface().asPoint()
+						pt = initialSlice.pointOnSurface().asPoint()
 						
 						# populate new attributes
 						fet.setAttribute('ps_id', j)
 						fet.setAttribute('ps_uuid', str(uuid4()))
-						fet.setAttribute('ps_area', poly.area())
+						fet.setAttribute('ps_area', initialSlice.area())
 						fet.setAttribute('ps_repPointX', pt[0])
 						fet.setAttribute('ps_repPointY', pt[1])
 				
