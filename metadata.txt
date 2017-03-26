@@ -18,9 +18,8 @@ email=jonnyhuck@gmail.com
 
 about=Divides Polygons
 
-tracker=https://gitlab.com/jonnyhuck/polygon-divider
-repository=https://gitlab.com/jonnyhuck/polygon-divider
-# End of mandatory metadata
+tracker=https://github.com/jonnyhuck/RFCL-PolygonDivider/issues
+repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
 
 
 # Recommended items:
@@ -31,7 +30,7 @@ repository=https://gitlab.com/jonnyhuck/polygon-divider
 # Tags are comma separated with spaces allowed
 tags=Vector, Polygon, Polygon Division, Polygon Split, Land Parcel
 
-homepage=https://royferguson.co.uk/
+homepage=https://github.com/jonnyhuck/RFCL-PolygonDivider
 category=Plugins
 icon=icon.png
 experimental=False
