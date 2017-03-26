@@ -12,6 +12,14 @@ As a simple worked example, you can take a polygon like this:
 
 ![divided hull](images/dividedhull.png)
 
+There are two options available to the user when dividing a polygon. The above uses the **absorb** method, whereby all of the polygons are slightly larger than the requested size, in order to 'absorb' any odd-sized 'offcuts' that would otherwise be left behind. The other alternative would be the **offcut** method. An example of this is given below, in which all of the polygons would be the precise size as requested, except for the light green one at teh very top, which represente the *'offcut'*:
+
+![offcut hull](images/hulloffcut.png)
+
+The choice of which is best from the above will vary depending upon the specific requirements of the user, and the simplicity of the polygon in question. 
+
+Each of the above cutting methods can be undertaken in 4 directions: **left-right**, **right-left**, **bottom-top** and **top-bottom**. Again, depending upon the shape of the specific polygon to be divided, better results might be achieved in some directions than others.
+
 Each output polygon inherits all of the attributes from its parent, as well as the following additional attributes:
 
 * `ps_id`: a unique integer ID for each output polygon
