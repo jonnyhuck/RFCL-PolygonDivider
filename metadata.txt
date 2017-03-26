@@ -11,7 +11,7 @@ name=Polygon Divider
 qgisMinimumVersion=2.0
 description=Divides Polygons
 version=0.1
-author=Roy Ferguson Consulting
+author=Roy Ferguson Consultancy
 email=jonnyhuck@gmail.com
 
 about=Divides Polygons
