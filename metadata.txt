@@ -13,11 +13,9 @@ name=Polygon Divider
 qgisMinimumVersion=2.0
 description=Divides polygons into smaller 'squareish' polygons of a specified size
 version=0.1
-author=Roy Ferguson Consultancy Ltd.
+author=Dr Jonny Huck @ Roy Ferguson Consultancy Ltd.
 email=jonnyhuck@gmail.com
-
-about=Divides Polygons
-
+about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on.<br/><br/>Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples.
 tracker=https://github.com/jonnyhuck/RFCL-PolygonDivider/issues
 repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
 
@@ -28,10 +26,10 @@ repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=Vector, Polygon, Polygon Division, Polygon Split, Land Parcel
+tags=Polygon Division, Polygon Split, Land Parcel
 
 homepage=https://github.com/jonnyhuck/RFCL-PolygonDivider
-category=Plugins
+category=Vector
 icon=icon.png
 experimental=False
 deprecated=False
