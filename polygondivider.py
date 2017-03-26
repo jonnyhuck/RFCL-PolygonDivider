@@ -38,23 +38,17 @@
 	*
 """
 
-from PyQt4.QtCore import QVariant, QObject, pyqtSignal
-from qgis.core import *
+from PyQt4 import QtCore
+from PyQt4.QtCore import QVariant, QObject, pyqtSignal, QSettings, QTranslator, qVersion, QCoreApplication, Qt, QThread
+from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar, QPushButton
+import resources, os.path, traceback
 import qgis.utils, sys
 from uuid import uuid4
 from math import sqrt
-
-from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt, QThread
-from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar, QPushButton
-import resources, os.path, traceback
 from polygondivider_dialog import PolygonDividerDialog
-from qgis.core import QgsVectorLayer, QgsMapLayerRegistry, QgsMessageLog
+from qgis.core import *		#TODO: Should be more specific here
+# from qgis.core import QgsVectorLayer, QgsMapLayerRegistry, QgsMessageLog
 from qgis.gui import QgsMessageBar
-
-from PyQt4 import QtCore
-
-
-
 
 
 '''
@@ -524,6 +518,10 @@ class ExampleWorker(AbstractWorker):
 		fieldList.append(QgsField('ps_uuid', QVariant.String))
 	#	if fieldList.lookupField('ps_area') == -1:
 		fieldList.append(QgsField('ps_area', QVariant.Double))
+	#	if fieldList.lookupField('ps_area') == -1:
+		fieldList.append(QgsField('ps_repPointX',QVariant.Int))
+	#	if fieldList.lookupField('ps_area') == -1:
+		fieldList.append(QgsField('ps_repPointY',QVariant.Int))
 
 		# create a new shapefile to write the results to
 		writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
@@ -898,10 +896,15 @@ class ExampleWorker(AbstractWorker):
 							for a in range(len(currAttributes)):
 								fet[a] = currAttributes[a]
 					
+							# calculate representative point
+							pt = poly.pointOnSurface().asPoint()
+						
 							# populate new attributes
 							fet.setAttribute('ps_id', j)
 							fet.setAttribute('ps_uuid', str(uuid4()))
-							fet.setAttribute('ps_area', right.area())
+							fet.setAttribute('ps_area', poly.area())
+							fet.setAttribute('ps_repPointX', pt[0])
+							fet.setAttribute('ps_repPointY', pt[1])
 					
 							# add the geometry to the feature
 							fet.setGeometry(right)
@@ -928,10 +931,15 @@ class ExampleWorker(AbstractWorker):
 						for a in range(len(currAttributes)):
 							fet[a] = currAttributes[a]
 				
+						# calculate representative point
+						pt = poly.pointOnSurface().asPoint()
+						
 						# populate new attributes
 						fet.setAttribute('ps_id', j)
 						fet.setAttribute('ps_uuid', str(uuid4()))
-						fet.setAttribute('ps_area', initialSlice.area())
+						fet.setAttribute('ps_area', poly.area())
+						fet.setAttribute('ps_repPointX', pt[0])
+						fet.setAttribute('ps_repPointY', pt[1])
 				
 						# add the geometry to the feature
 						fet.setGeometry(initialSlice)
@@ -959,10 +967,15 @@ class ExampleWorker(AbstractWorker):
 						for a in range(len(currAttributes)):
 							fet[a] = currAttributes[a]
 				
+						# calculate representative point
+						pt = poly.pointOnSurface().asPoint()
+						
 						# populate new attributes
 						fet.setAttribute('ps_id', j)
 						fet.setAttribute('ps_uuid', str(uuid4()))
 						fet.setAttribute('ps_area', poly.area())
+						fet.setAttribute('ps_repPointX', pt[0])
+						fet.setAttribute('ps_repPointY', pt[1])
 				
 						# add the geometry to the feature
 						fet.setGeometry(poly)
