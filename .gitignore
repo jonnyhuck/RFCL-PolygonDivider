@@ -1,5 +1,15 @@
+# Dropbox Files
 .DS_Store
 */.DS_Store
+
+# QGIS Plugin Stuff
+help/
+scripts/
+test/
+.noseids
+pb_tool.cfg
+pylintrc
+resources_rc.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
