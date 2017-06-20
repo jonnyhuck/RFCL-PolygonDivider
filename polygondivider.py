@@ -513,15 +513,20 @@ class ExampleWorker(AbstractWorker):
 		# TODO: NEED TO CHECK IF THEY ALREADY EXIST
 		# add new fields for this tool (if they don't already exist)
 	#	if fieldList.lookupField('ps_id') == -1:
-		fieldList.append(QgsField('ps_id',QVariant.Int))
-	#	if fieldList.lookupField('ps_uuid') == -1:
-		fieldList.append(QgsField('ps_uuid', QVariant.String))
-	#	if fieldList.lookupField('ps_area') == -1:
-		fieldList.append(QgsField('ps_area', QVariant.Double))
-	#	if fieldList.lookupField('ps_area') == -1:
-		fieldList.append(QgsField('ps_repPointX',QVariant.Int))
-	#	if fieldList.lookupField('ps_area') == -1:
-		fieldList.append(QgsField('ps_repPointY',QVariant.Int))
+# 		fieldList.append(QgsField('ps_id',QVariant.Int))
+# 	#	if fieldList.lookupField('ps_uuid') == -1:
+# 		fieldList.append(QgsField('ps_uuid', QVariant.String))
+# 	#	if fieldList.lookupField('ps_area') == -1:
+# 		fieldList.append(QgsField('ps_area', QVariant.Double))
+# 	#	if fieldList.lookupField('ps_area') == -1:
+# 		fieldList.append(QgsField('ps_repPointX',QVariant.Int))
+# 	#	if fieldList.lookupField('ps_area') == -1:
+# 		fieldList.append(QgsField('ps_repPointY',QVariant.Int))
+		fieldList.append(QgsField('POLY_ID',QVariant.Int))
+		fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
+		fieldList.append(QgsField('AREA', QVariant.Double))
+		fieldList.append(QgsField('POINTX',QVariant.Int))
+		fieldList.append(QgsField('POINTY',QVariant.Int))
 
 		# create a new shapefile to write the results to
 		writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
@@ -734,9 +739,9 @@ class ExampleWorker(AbstractWorker):
 										fet[a] = currAttributes[a]
 				
 									# populate new attributes
-									fet.setAttribute('ps_id', j)
-									fet.setAttribute('ps_uuid', str(uuid4()))
-									fet.setAttribute('ps_area', poly.area())
+									fet.setAttribute('POLY_ID', j)
+									fet.setAttribute('UNIQUE_ID', str(uuid4()))
+									fet.setAttribute('AREA', poly.area())
 				
 									# add the geometry to the feature
 									fet.setGeometry(poly)
@@ -900,11 +905,11 @@ class ExampleWorker(AbstractWorker):
 							pt = right.pointOnSurface().asPoint()
 						
 							# populate new attributes
-							fet.setAttribute('ps_id', j)
-							fet.setAttribute('ps_uuid', str(uuid4()))
-							fet.setAttribute('ps_area', right.area())
-							fet.setAttribute('ps_repPointX', pt[0])
-							fet.setAttribute('ps_repPointY', pt[1])
+							fet.setAttribute('POLY_ID', j)
+							fet.setAttribute('UNIQUE_ID', str(uuid4()))
+							fet.setAttribute('AREA', right.area())
+							fet.setAttribute('POINTX', pt[0])
+							fet.setAttribute('POINTY', pt[1])
 					
 							# add the geometry to the feature
 							fet.setGeometry(right)
@@ -935,11 +940,11 @@ class ExampleWorker(AbstractWorker):
 						pt = initialSlice.pointOnSurface().asPoint()
 						
 						# populate new attributes
-						fet.setAttribute('ps_id', j)
-						fet.setAttribute('ps_uuid', str(uuid4()))
-						fet.setAttribute('ps_area', initialSlice.area())
-						fet.setAttribute('ps_repPointX', pt[0])
-						fet.setAttribute('ps_repPointY', pt[1])
+						fet.setAttribute('POLY_ID', j)
+						fet.setAttribute('UNIQUE_ID', str(uuid4()))
+						fet.setAttribute('AREA', initialSlice.area())
+						fet.setAttribute('POINTX', pt[0])
+						fet.setAttribute('POINTY', pt[1])
 				
 						# add the geometry to the feature
 						fet.setGeometry(initialSlice)
@@ -971,11 +976,11 @@ class ExampleWorker(AbstractWorker):
 						pt = poly.pointOnSurface().asPoint()
 						
 						# populate new attributes
-						fet.setAttribute('ps_id', j)
-						fet.setAttribute('ps_uuid', str(uuid4()))
-						fet.setAttribute('ps_area', poly.area())
-						fet.setAttribute('ps_repPointX', pt[0])
-						fet.setAttribute('ps_repPointY', pt[1])
+						fet.setAttribute('POLY_ID', j)
+						fet.setAttribute('UNIQUE_ID', str(uuid4()))
+						fet.setAttribute('AREA', poly.area())
+						fet.setAttribute('POINTX', pt[0])
+						fet.setAttribute('POINTY', pt[1])
 				
 						# add the geometry to the feature
 						fet.setGeometry(poly)
