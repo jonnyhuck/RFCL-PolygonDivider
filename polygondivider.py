@@ -511,17 +511,7 @@ class ExampleWorker(AbstractWorker):
 		fieldList = layer.fields()
 
 		# TODO: NEED TO CHECK IF THEY ALREADY EXIST
-		# add new fields for this tool (if they don't already exist)
-	#	if fieldList.lookupField('ps_id') == -1:
-# 		fieldList.append(QgsField('ps_id',QVariant.Int))
-# 	#	if fieldList.lookupField('ps_uuid') == -1:
-# 		fieldList.append(QgsField('ps_uuid', QVariant.String))
-# 	#	if fieldList.lookupField('ps_area') == -1:
-# 		fieldList.append(QgsField('ps_area', QVariant.Double))
-# 	#	if fieldList.lookupField('ps_area') == -1:
-# 		fieldList.append(QgsField('ps_repPointX',QVariant.Int))
-# 	#	if fieldList.lookupField('ps_area') == -1:
-# 		fieldList.append(QgsField('ps_repPointY',QVariant.Int))
+		# add new fields for this tool
 		fieldList.append(QgsField('POLY_ID',QVariant.Int))
 		fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
 		fieldList.append(QgsField('AREA', QVariant.Double))
