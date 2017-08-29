@@ -552,6 +552,11 @@ class ExampleWorker(AbstractWorker):
 				# extract the geometry and sort out self intersections etc. with a buffer of 0m
 				bufferedPolygon = feat.geometry().buffer(0, 15)
 
+				# if the buffer came back as None, skip
+				if bufferedPolygon is None:
+					QgsMessageLog.logMessage("A polygon could not be buffered by QGIS, ignoring", level=QgsMessageLog.WARNING)
+					continue
+
 				# make multipolygon into list of polygons...
 				subfeatures = []
 				if bufferedPolygon.isMultipart():
