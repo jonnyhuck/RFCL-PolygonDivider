@@ -402,7 +402,7 @@ class ExampleWorker(AbstractWorker):
 					left = polys.pop(minxi)
 		
 					# right is the rightest one
-					maxx = 0
+					maxx = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().xMaximum()
 						if p > maxx:
