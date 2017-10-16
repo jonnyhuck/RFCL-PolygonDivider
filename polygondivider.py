@@ -322,7 +322,7 @@ class ExampleWorker(AbstractWorker):
 				if horizontal:	## cut from the bottom
 
 					# left is the top one
-					maxy = 0
+					maxy = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().yMaximum()
 						if p > maxy:
