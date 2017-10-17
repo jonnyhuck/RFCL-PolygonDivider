@@ -322,7 +322,7 @@ class ExampleWorker(AbstractWorker):
 				if horizontal:	## cut from the bottom
 
 					# left is the top one
-					maxy = 0
+					maxy = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().yMaximum()
 						if p > maxy:
@@ -345,7 +345,7 @@ class ExampleWorker(AbstractWorker):
 				else:	## cutting from the left
 	
 					# left is the rightest one
-					maxx = 0
+					maxx = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().xMaximum()
 						if p > maxx:
@@ -379,7 +379,7 @@ class ExampleWorker(AbstractWorker):
 					left = polys.pop(minyi)
 	
 					# right is the top one
-					maxy = 0
+					maxy = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().yMaximum()
 						if p > maxy:
@@ -402,7 +402,7 @@ class ExampleWorker(AbstractWorker):
 					left = polys.pop(minxi)
 		
 					# right is the rightest one
-					maxx = 0
+					maxx = float('-inf')
 					for i in range(len(polys)):
 						p = polys[i].boundingBox().xMaximum()
 						if p > maxx:
