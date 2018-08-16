@@ -12,7 +12,7 @@ As a simple worked example, you can take a polygon like this:
 
 ![divided hull](images/dividedhull.png)
 
-There are two options available to the user when dividing a polygon. The above uses the **absorb** method, whereby all of the polygons are slightly larger than the requested size, in order to 'absorb' any odd-sized 'offcuts' that would otherwise be left behind. The other alternative would be the **offcut** method. An example of this is given below, in which all of the polygons would be the precise size as requested, except for the light green one at teh very top, which represente the *'offcut'*:
+There are two options available to the user when dividing a polygon. The above uses the **absorb** method, whereby all of the polygons are slightly larger than the requested size, in order to 'absorb' any odd-sized 'offcuts' that would otherwise be left behind. The other alternative would be the **offcut** method. An example of this is given below, in which all of the polygons would be the precise size as requested, except for the light green one at the very top, which represente the *'offcut'*:
 
 ![offcut hull](images/hulloffcut.png)
 
