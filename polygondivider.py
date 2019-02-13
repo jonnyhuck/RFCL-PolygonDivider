@@ -161,6 +161,7 @@ class ExampleWorker(AbstractWorker):
 	#		  return True
 
 	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction):
+	def __init__(self, inLayer, pgHost, pgPort, pgDBName, pgLayerName, batchSize, targetArea, absorbFlag, direction):
 		"""
 		* Initialse Thread	
 		"""
@@ -169,10 +170,14 @@ class ExampleWorker(AbstractWorker):
 		AbstractWorker.__init__(self)
 
 		# import args to thread
-		self.layer = layer
-		self.outFilePath = outFilePath
-		self.target_area = target_area
-		self.absorb_flag = absorb_flag
+		self.layer = inLayer
+		self.pgHost = pgHost
+		self.pgPort = pgPort
+		self.pgDBName = pgDBName
+		self.pgLayerName = pgLayerName
+  		self.batch_size = batchSize
+		self.target_area = targetArea
+		self.absorb_flag = absorbFlag
 		self.direction = direction
 
 
@@ -1311,13 +1316,13 @@ class PolygonDivider:
 			self.dlg.lineEdit_2.setText(filename)
 
 
-	def startWorker(self, inFile, outFilePath, targetArea, absorbFlag, direction):
+	def startWorker(self, inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction):
 		"""
 		* JJH: Run the polygon division in a thread, feed back to progress bar
 		"""
 		
-		worker = ExampleWorker(inFile, outFilePath, targetArea, absorbFlag, direction)
-		start_worker(worker, self.iface, 'running the worker')
+		worker = ExampleWorker(inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
+		start_worker(worker, self.iface, 'Running the worker')
 		
 
 	def run(self):
@@ -1369,6 +1374,6 @@ class PolygonDivider:
 			direction = self.dlg.cboCutDir.currentIndex()
 		
 			# run the tool
-			self.startWorker(inFile, outFilePath, targetArea, absorbFlag, direction)
+			self.startWorker(inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
 
 			#--------------------------------------------------------------JJH
