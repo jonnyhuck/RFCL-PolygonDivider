@@ -514,19 +514,73 @@ class ExampleWorker(AbstractWorker):
 		ERROR_FLAG_2 = False	# tracks change direction from forward to backward (or vice versa) by switching forward_flag
 		ERROR_FLAG_3 = False	# tracks change cutline from horizontal to backward (or vice versa) by switching horizontal_flag
 
+		# create DB connection - fail if connection details invalid
+		try:        
+		    dbConn = psycopg2.connect( database = self.pgDBName,
+		                               user = self.pgUser,
+		                               password = self.pgPassword,
+		                               host = self.pgHost,
+		                               port = self.pgPort)
+		    dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+		except:
+		    QgsMessageLog.logMessage("PostGres database connection details invalid.", level=QgsMessageLog.CRITICAL)
+		    raise Exception("PostGres database connection details invalid.")
+           
+
 		# get fields from the input shapefile
 		fieldList = layer.fields()
 
-		# TODO: NEED TO CHECK IF THEY ALREADY EXIST
 		# add new fields for this tool
-		fieldList.append(QgsField('POLY_ID',QVariant.Int))
-		fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
-		fieldList.append(QgsField('AREA', QVariant.Double))
-		fieldList.append(QgsField('POINTX',QVariant.Int))
-		fieldList.append(QgsField('POINTY',QVariant.Int))
+		if fieldList.fieldNameIndex('POLY_ID') == -1:
+			fieldList.append(QgsField('POLY_ID',QVariant.Int))
+		if fieldList.fieldNameIndex('UNIQUE_ID') == -1:
+			fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
+		if fieldList.fieldNameIndex('AREA') == -1:
+			fieldList.append(QgsField('AREA', QVariant.Double))
+		if fieldList.fieldNameIndex('POINTX') == -1:
+			fieldList.append(QgsField('POINTX',QVariant.Int))
+		if fieldList.fieldNameIndex('POINTY') == -1:
+			fieldList.append(QgsField('POINTY',QVariant.Int))
 
-		# create a new shapefile to write the results to
-		writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+		# create new table to write the results to
+		dp = layer.dataProvider()
+		sqlCmd = []
+		sqlCmd.append('CREATE TABLE {0} ('.format(self.pgLayerName.lower()))
+		sqlCmd.append('id serial primary key,')      
+		sqlCmd.append('geom geometry(Polygon,{0}),'.format(layer.crs().postgisSrid()))
+		for field in fieldList:
+		    if dp.name() == 'postgres':
+		         if field.length() == -1:
+		             fType = field.typeName()
+		         else:              
+		             fType = '{0}({1})'.format(field.typeName, field.length())
+		    else:           
+		         if field.type() == 1:
+		             fType = 'bool'
+		         elif field.type() == 2:
+		             fType = 'int'
+		         elif field.type() == 6:
+		             fType = 'float8'
+		         elif field.type() == 10:
+		             fType = 'varchar'
+		             if field.length() > 0:
+		                 fType += '({0})'.format(field.length())
+		         elif field.type() == 14:
+		             fType = 'date'
+		         elif field.type() == 16:
+		             fType = 'timestamp'
+		    sqlCmd.append('{0} {1},'.format(field.name().lower(),fType))
+		createCmd = ''.join('sqlCmd')[:-1] + ')'                                    
+		
+  		try:
+		    curs = dbConn.cursor()
+		    curs.execute(createCmd)
+		    curs.commit()              
+		    curs.close()      
+		except:
+		    QgsMessageLog.logMessage("Could not create PostGIS table.", level=QgsMessageLog.CRITICAL)
+		    raise Exception("Could not create PostGIS table.")  
+
 
 		# define this to ensure that it's global
 		subfeatures = []
