@@ -469,6 +469,46 @@ class ExampleWorker(AbstractWorker):
 	
 		# return the difference between the resulting polygon area (right of the line) and the desired area
 		return self.getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward) - targetArea
+  
+	def writeFeature(self, feat):
+          sqlValues = []
+          sqlValues.append('ST_GeomFromText(\'{0}\', 27700)'.format(feat.geometry().exportToWkt()))
+          fields = feat.fields()
+          attributes = feat.attributes()
+          for n in range(fields.length()):
+              if attributes[n] == NULL:
+                  sqlValues.append('{0}'.format(attributes[n]))
+              else:
+                  if fields[n].type() == 2:
+                      if fields[n].typeName() == 'bit':
+                          if attributes[n] == 1 or attributes[n] == -1:
+                              sqlValues.append('true')
+                          elif attributes[n] == 0:               
+                              sqlValues.append('false')
+                          else:                
+                              sqlValues.append('NULL')
+                  elif fields[n].type() == 6:
+                      sqlValues.append('{0}'.format(attributes[n]))
+                  elif field.type() == 10:
+                      if fields[n].typeName() == 'bool':
+                          if attributes[n] == 't':
+                              sqlValues.append('true')
+                          elif attributes[n] == 'f':               
+                              sqlValues.append('false')
+                          else:               
+                              sqlValues.append('NULL')
+                      else:
+                          sqlValues.append('\'{0}\''.format(attributes[n]))
+                  elif field.type() == 14: # date
+                      sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
+                  elif field.type() == 16: # date/time
+                      sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
+              
+          insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgLayerName, self.fieldStr, ','.join(sqlValues))
+          
+          curs = self.dbConn.cursor()
+          curs.execute(insertCmd)
+          curs.close()	    
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
 
@@ -484,7 +524,6 @@ class ExampleWorker(AbstractWorker):
 			
 		# TODO: reference these properly
 		layer = self.layer
-		outFilePath = self.outFilePath
 		target_area = self.target_area
 		absorb_flag = self.absorb_flag
 		direction = self.direction
@@ -516,16 +555,18 @@ class ExampleWorker(AbstractWorker):
 
 		# create DB connection - fail if connection details invalid
 		try:        
-		    dbConn = psycopg2.connect( database = self.pgDBName,
+		    self.dbConn = psycopg2.connect( database = self.pgDBName,
 		                               user = self.pgUser,
 		                               password = self.pgPassword,
 		                               host = self.pgHost,
 		                               port = self.pgPort)
-		    dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+		    self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
 		except:
 		    QgsMessageLog.logMessage("PostGres database connection details invalid.", level=QgsMessageLog.CRITICAL)
 		    raise Exception("PostGres database connection details invalid.")
            
+		# get layer crs
+		self.crs = layer.crs().postgisSrid()
 
 		# get fields from the input shapefile
 		fieldList = layer.fields()
@@ -545,9 +586,10 @@ class ExampleWorker(AbstractWorker):
 		# create new table to write the results to
 		dp = layer.dataProvider()
 		sqlCmd = []
-		sqlCmd.append('CREATE TABLE {0} ('.format(self.pgLayerName.lower()))
 		sqlCmd.append('id serial primary key,')      
-		sqlCmd.append('geom geometry(Polygon,{0}),'.format(layer.crs().postgisSrid()))
+		sqlCmd.append('geom geometry(Polygon,{0}),'.format(self.crs))
+		fieldNames = []      
+		fieldNames.append('geom')  
 		for field in fieldList:
 		    if dp.name() == 'postgres':
 		         if field.length() == -1:
@@ -556,31 +598,39 @@ class ExampleWorker(AbstractWorker):
 		             fType = '{0}({1})'.format(field.typeName, field.length())
 		    else:           
 		         if field.type() == 1:
-		             fType = 'bool'
+		             fType = 'boolean'
 		         elif field.type() == 2:
-		             fType = 'int'
+		             if field.typeName() == 'bit':
+		                 fType = 'boolean'                      
+		             else: 
+		                 fType = 'int'
 		         elif field.type() == 6:
 		             fType = 'float8'
 		         elif field.type() == 10:
-		             fType = 'varchar'
-		             if field.length() > 0:
-		                 fType += '({0})'.format(field.length())
+		             if field.typeName() == 'bool' or field.typeName() == 'boolean':
+		                 fType = 'boolean'                      
+		             else:
+		                 fType = 'varchar'
+		                 if field.length() > 0:
+		                     fType += '({0})'.format(field.length())
 		         elif field.type() == 14:
 		             fType = 'date'
 		         elif field.type() == 16:
 		             fType = 'timestamp'
+		    fieldNames.append(field.name().lower())
 		    sqlCmd.append('{0} {1},'.format(field.name().lower(),fType))
-		createCmd = ''.join('sqlCmd')[:-1] + ')'                                    
-		
+		createCmd = 'CREATE TABLE {0} ({1})'.format(self.pgLayerName.lower(),','.join(sqlCmd))                                    
+  		self.fieldStr = ','.join(fieldNames)
+  		
   		try:
-		    curs = dbConn.cursor()
+		    curs = self.dbConn.cursor()
 		    curs.execute(createCmd)
-		    curs.commit()              
-		    curs.close()      
+		    curs.close() 
+		    self.dbConn.commit()              
 		except:
+		    self.dbConn.close()      
 		    QgsMessageLog.logMessage("Could not create PostGIS table.", level=QgsMessageLog.CRITICAL)
 		    raise Exception("Could not create PostGIS table.")  
-
 
 		# define this to ensure that it's global
 		subfeatures = []
@@ -601,6 +651,7 @@ class ExampleWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 
 		# loop through all of the features in the input data
+           
 		iter = layer.getFeatures()
 		for feat in iter:
 
@@ -793,21 +844,35 @@ class ExampleWorker(AbstractWorker):
 									# populate inherited attributes
 									for a in range(len(currAttributes)):
 										fet[a] = currAttributes[a]
+          
+									# calculate representative point
+									pt = poly.pointOnSurface().asPoint()
 				
 									# populate new attributes
 									fet.setAttribute('POLY_ID', j)
 									fet.setAttribute('UNIQUE_ID', str(uuid4()))
 									fet.setAttribute('AREA', poly.area())
+									fet.setAttribute('POINTX', pt[0])
+									fet.setAttribute('POINTY', pt[1])
 				
 									# add the geometry to the feature
 									fet.setGeometry(poly)
 				
-									# write the feature to the out file
-									writer.addFeature(fet)
+									# write the feature to the PostGIS table
+									try: 
+									    self.writeFeature(fet)
+									except:   
+									    QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
 				
-									# increment feature counter and 
+									# increment feature counters 
 									j+=1
+									k+=1
 						
+									# commit to Postgres if required
+									if k == self.batchSize:
+										self.dbConn.commit()
+										k = 0 
+                                                   
 									# update progress bar if required
 									if j // totalDivisions * 100 > currProgress:
 										self.progress.emit(j // totalDivisions * 100)
@@ -970,11 +1035,20 @@ class ExampleWorker(AbstractWorker):
 							# add the geometry to the feature
 							fet.setGeometry(right)
 					
-							# write the feature to the out file
-							writer.addFeature(fet)
+							# write the feature to the PostGIS table
+							try: 
+							    self.writeFeature(fet)
+							except:   
+							    QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
 					
-							# increment feature counter and 
+							# increment feature counters 
 							j+=1
+							k+=1
+						
+							# commit to Postgres if required
+							if k == self.batchSize:
+								self.dbConn.commit()
+								k = 0                
 
 							# update progress bar if required
 							if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1005,11 +1079,20 @@ class ExampleWorker(AbstractWorker):
 						# add the geometry to the feature
 						fet.setGeometry(initialSlice)
 				
-						# write the feature to the out file
-						writer.addFeature(fet)
+						# write the feature to the PostGIS table
+						try: 
+						    self.writeFeature(fet)
+						except:   
+						    QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
 				
-						# increment feature counter and 
+						# increment feature counters 
 						j+=1
+						k+=1
+						
+						# commit to Postgres if required
+						if k == self.batchSize:
+							self.dbConn.commit()
+							k = 0      							
 
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1041,11 +1124,20 @@ class ExampleWorker(AbstractWorker):
 						# add the geometry to the feature
 						fet.setGeometry(poly)
 				
-						# write the feature to the out file
-						writer.addFeature(fet)
+						# write the feature to the PostGIS table
+						try: 
+						    self.writeFeature(fet)
+						except:   
+						    QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
 				
-						# increment feature counter and 
+						# increment feature counters 
 						j+=1
+						k+=1
+						
+						# commit to Postgres if required
+						if k == self.batchSize:
+							self.dbConn.commit()
+							k = 0  												
 
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1065,7 +1157,18 @@ class ExampleWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 		
 		# finally, open the resulting file and return it
-		layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+		self.dbConn.close()
+		uri = QgsDataSourceUri()
+		uri.setConnection(self.pgHost,self.pgPort,self.pgDBName,self.pgUser,self.pgPassword)
+  		table = self.pgLayerName.split('.')
+		if table.length() == 1:          
+ 		    uri.setDataSource('public', self.pgLayerName,'geom','')
+		else:
+		    uri.setDataSource(table[0], table[1],'geom','')      
+		uri.setKeyColumn('id')
+		uri.setWkbType(QgsWKBTypes.Polygon)	      
+		uri.setSrid(str(self.crs))
+		layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
 		if layer.isValid():
 			 return layer
 		else:
@@ -1080,10 +1183,12 @@ class ExampleWorker(AbstractWorker):
 	'''
 
 		
-		
 	def cleanup(self):
 # 		print "cleanup here"
-		pass
+		try:
+		    self.dbConn.close()   
+		except:
+		    pass      
 
 
 class UserAbortedNotification(Exception):
@@ -1334,9 +1439,6 @@ class PolygonDivider:
 			text=self.tr(u'Divide Polygons'),
 			callback=self.run,
 			parent=self.iface.mainWindow())
-			
-		# launch file browser for output file button - link to function
-		self.dlg.pushButton.clicked.connect(self.select_output_file)
 
 
 	def unload(self):
@@ -1348,28 +1450,6 @@ class PolygonDivider:
 			self.iface.removeToolBarIcon(action)
 		# remove the toolbar
 		del self.toolbar
-
-
-	def select_output_file(self):
-		"""
-		* JJH: Open file browser
-		"""
-
-		# get filename from dialog	
-		filename = QFileDialog.getSaveFileName(self.dlg, "Select output file ","", '*.shp')
-	
-		# verify that a name was selected
-		if filename != "":
-
-			# clear previous value
-			self.dlg.lineEdit_2.clear()
-
-			# make sure that an extension was included
-			if filename[-4:] != '.shp':
-				filename += '.shp'
-
-			# put the result in the text box on the dialog
-			self.dlg.lineEdit_2.setText(filename)
 
 
 	def startWorker(self, inLayer, pgHost, pgPort, pgDBName, pgUser, pgPassword, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction):
@@ -1390,7 +1470,7 @@ class PolygonDivider:
 	
 		# populate cboLayer with the active layers
 		self.dlg.cboLayer.clear()	# need to clear here or it will add them all again every time the dialog is opened
-		layers = self.iface.legendInterface().layers()
+		layers = QgsMapLayerRegistry.instance().layers().values() # List all open map layers - visible or not
 		layer_list = []
 		for layer in layers:
 			 layer_list.append(layer.name())
@@ -1402,7 +1482,7 @@ class PolygonDivider:
 
 		# JJH: Moved this upward, otherwise it adds an additional dialog each time you open it
 		# launch file browser for output file button - link to function
-# 		self.dlg.pushButton.clicked.connect(self.select_output_file)
+		#self.dlg.pushButton.clicked.connect(self.select_output_file)
 
 		#----------------------------------------------------------------------JJH
 
