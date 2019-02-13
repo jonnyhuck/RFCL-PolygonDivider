@@ -1327,17 +1327,17 @@ class PolygonDivider:
 
 		# JJH: set up the dialog here--------------------------------------------
 	
-		# populate comboBox with the active layers
-		self.dlg.comboBox.clear()	# need to clear here or it will add them all again every time the dialog is opened
+		# populate cboLayer with the active layers
+		self.dlg.cboLayer.clear()	# need to clear here or it will add them all again every time the dialog is opened
 		layers = self.iface.legendInterface().layers()
 		layer_list = []
 		for layer in layers:
 			 layer_list.append(layer.name())
-		self.dlg.comboBox.addItems(layer_list)
+		self.dlg.cboLayer.addItems(layer_list)
 
-		# populate comboBox_2 with the possible directions
-		self.dlg.comboBox_2.clear() # need to clear here or it will add them all again every time the dialog is opened
-		self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
+		# populate cboCutDir with the possible directions
+		self.dlg.cboCutDir.clear() # need to clear here or it will add them all again every time the dialog is opened
+		self.dlg.cboCutDir.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
 		# JJH: Moved this upward, otherwise it adds an additional dialog each time you open it
 		# launch file browser for output file button - link to function
@@ -1357,11 +1357,16 @@ class PolygonDivider:
 			# JH: RUN THE TOOL------------------------------------------------
 			
 			# get user settings
-			inFile = layers[self.dlg.comboBox.currentIndex()]
-			outFilePath = self.dlg.lineEdit_2.text()
+			inLayer = layers[self.dlg.cboLayer.currentIndex()]
+			pgHost = self.dlg.pgHost.text()
+			pgPort = self.dlg.pgPort.text()
+			pgDBName = self.dlg.pgDBName.text()
+			pgLayerName = self.dlg.pgLayerName.text()
+			createFlag = self.dlg.chkCreateLayer.isChecked()
+			batchSize = int(self.dlg.batchSize.text())
 			targetArea = float(self.dlg.lineEdit.text())
-			absorbFlag = self.dlg.checkBox.isChecked()
-			direction = self.dlg.comboBox_2.currentIndex()
+			absorbFlag = self.dlg.chkOffcuts.isChecked()
+			direction = self.dlg.cboCutDir.currentIndex()
 		
 			# run the tool
 			self.startWorker(inFile, outFilePath, targetArea, absorbFlag, direction)
