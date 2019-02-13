@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>381</width>
-    <height>332</height>
+    <height>570</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,7 +20,7 @@
    <property name="geometry">
     <rect>
      <x>30</x>
-     <y>280</y>
+     <y>530</y>
      <width>341</width>
      <height>32</height>
     </rect>
@@ -32,11 +32,11 @@
     <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
    </property>
   </widget>
-  <widget class="QCheckBox" name="checkBox">
+  <widget class="QCheckBox" name="chkOffcuts">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>260</y>
+     <y>510</y>
      <width>131</width>
      <height>22</height>
     </rect>
@@ -48,7 +48,7 @@
     <bool>true</bool>
    </property>
   </widget>
-  <widget class="QComboBox" name="comboBox">
+  <widget class="QComboBox" name="cboLayer">
    <property name="geometry">
     <rect>
      <x>20</x>
@@ -58,7 +58,7 @@
     </rect>
    </property>
   </widget>
-  <widget class="QLabel" name="label">
+  <widget class="QLabel" name="lblInputLayer">
    <property name="geometry">
     <rect>
      <x>20</x>
@@ -71,11 +71,11 @@
     <string>Input Layer</string>
    </property>
   </widget>
-  <widget class="QLineEdit" name="lineEdit">
+  <widget class="QLineEdit" name="targetArea">
    <property name="geometry">
     <rect>
      <x>22</x>
-     <y>160</y>
+     <y>410</y>
      <width>341</width>
      <height>27</height>
     </rect>
@@ -84,11 +84,11 @@
     <string>1000</string>
    </property>
   </widget>
-  <widget class="QLabel" name="label_2">
+  <widget class="QLabel" name="lblTargetArea">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>140</y>
+     <y>390</y>
      <width>341</width>
      <height>17</height>
     </rect>
@@ -97,21 +97,21 @@
     <string>Target Area (in CRS Units)</string>
    </property>
   </widget>
-  <widget class="QComboBox" name="comboBox_2">
+  <widget class="QComboBox" name="cboCutDir">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>220</y>
+     <y>470</y>
      <width>341</width>
      <height>27</height>
     </rect>
    </property>
   </widget>
-  <widget class="QLabel" name="label_3">
+  <widget class="QLabel" name="lblCutDir">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>200</y>
+     <y>450</y>
      <width>341</width>
      <height>17</height>
     </rect>
@@ -120,12 +120,12 @@
     <string>Cut Direction</string>
    </property>
   </widget>
-  <widget class="QLineEdit" name="lineEdit_2">
+  <widget class="QLineEdit" name="pgLayerName">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>100</y>
-     <width>291</width>
+     <y>290</y>
+     <width>341</width>
      <height>27</height>
     </rect>
    </property>
@@ -133,40 +133,149 @@
     <string/>
    </property>
   </widget>
-  <widget class="QLabel" name="label_4">
+  <widget class="QLabel" name="lblOutputLayer">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>80</y>
-     <width>81</width>
+     <y>270</y>
+     <width>111</width>
      <height>17</height>
     </rect>
    </property>
    <property name="text">
-    <string>Output File</string>
+    <string>Output Layer Name</string>
    </property>
   </widget>
-  <widget class="QPushButton" name="pushButton">
+  <widget class="QLabel" name="lblBatchSize">
    <property name="geometry">
     <rect>
-     <x>310</x>
-     <y>100</y>
-     <width>51</width>
-     <height>27</height>
+     <x>20</x>
+     <y>330</y>
+     <width>341</width>
+     <height>17</height>
     </rect>
    </property>
    <property name="text">
-    <string>...</string>
+    <string>Batch Size</string>
    </property>
+  </widget>
+  <widget class="QLineEdit" name="batchSize">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>350</y>
+     <width>341</width>
+     <height>27</height>
+    </rect>
+   </property>
+   <property name="inputMask">
+    <string>900000; </string>
+   </property>
+   <property name="text">
+    <string>1</string>
+   </property>
+  </widget>
+  <widget class="QGroupBox" name="grpPG">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>80</y>
+     <width>341</width>
+     <height>181</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>PostGres Connection Settings</string>
+   </property>
+   <widget class="QLineEdit" name="pgPort">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>90</y>
+      <width>101</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="inputMask">
+     <string>000000; </string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="lblPGPort">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>70</y>
+      <width>111</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Port</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="lblPGDBName">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>120</y>
+      <width>111</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Database Name</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="lblPGHost">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>20</y>
+      <width>111</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Host</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="pgDBName">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>140</y>
+      <width>321</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="pgHost">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>321</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
   </widget>
  </widget>
  <tabstops>
-  <tabstop>comboBox</tabstop>
-  <tabstop>lineEdit_2</tabstop>
-  <tabstop>pushButton</tabstop>
-  <tabstop>lineEdit</tabstop>
-  <tabstop>comboBox_2</tabstop>
-  <tabstop>checkBox</tabstop>
+  <tabstop>cboLayer</tabstop>
+  <tabstop>pgLayerName</tabstop>
+  <tabstop>targetArea</tabstop>
+  <tabstop>cboCutDir</tabstop>
+  <tabstop>chkOffcuts</tabstop>
  </tabstops>
  <resources/>
  <connections>
