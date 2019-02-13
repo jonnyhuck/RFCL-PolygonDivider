@@ -46,6 +46,7 @@ import qgis.utils, sys
 from uuid import uuid4
 from math import sqrt
 from polygondivider_dialog import PolygonDividerDialog
+import psycopg2
 from qgis.core import *		#TODO: Should be more specific here
 # from qgis.core import QgsVectorLayer, QgsMapLayerRegistry, QgsMessageLog
 from qgis.gui import QgsMessageBar
@@ -160,8 +161,7 @@ class ExampleWorker(AbstractWorker):
 
 	#		  return True
 
-	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction):
-	def __init__(self, inLayer, pgHost, pgPort, pgDBName, pgLayerName, batchSize, targetArea, absorbFlag, direction):
+	def __init__(self, inLayer, pgHost, pgPort, pgDBName, pgUser, pgPassword, pgLayerName, batchSize, targetArea, absorbFlag, direction):
 		"""
 		* Initialse Thread	
 		"""
@@ -174,6 +174,8 @@ class ExampleWorker(AbstractWorker):
 		self.pgHost = pgHost
 		self.pgPort = pgPort
 		self.pgDBName = pgDBName
+		self.pgUser = pgUser
+		self.pgPassword = pgPassword
 		self.pgLayerName = pgLayerName
   		self.batch_size = batchSize
 		self.target_area = targetArea
@@ -480,7 +482,7 @@ class ExampleWorker(AbstractWorker):
 		self.toggle_show_progress.emit(True)		
 		self.set_message.emit('Dividing Polygons')
 			
-		# TODO: reference there properly
+		# TODO: reference these properly
 		layer = self.layer
 		outFilePath = self.outFilePath
 		target_area = self.target_area
@@ -1316,12 +1318,12 @@ class PolygonDivider:
 			self.dlg.lineEdit_2.setText(filename)
 
 
-	def startWorker(self, inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction):
+	def startWorker(self, inLayer, pgHost, pgPort, pgDBName, pgUser, pgPassword, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction):
 		"""
 		* JJH: Run the polygon division in a thread, feed back to progress bar
 		"""
 		
-		worker = ExampleWorker(inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
+		worker = ExampleWorker(inLayer, pgHost, pgPort, pgDBName, pgUser, pgPassword, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
 		start_worker(worker, self.iface, 'Running the worker')
 		
 
@@ -1366,6 +1368,8 @@ class PolygonDivider:
 			pgHost = self.dlg.pgHost.text()
 			pgPort = self.dlg.pgPort.text()
 			pgDBName = self.dlg.pgDBName.text()
+			pgUser = self.dlg.pgUserName.text()
+			pgPassword = self.dlg.pgPassword.text()
 			pgLayerName = self.dlg.pgLayerName.text()
 			createFlag = self.dlg.chkCreateLayer.isChecked()
 			batchSize = int(self.dlg.batchSize.text())
@@ -1374,6 +1378,6 @@ class PolygonDivider:
 			direction = self.dlg.cboCutDir.currentIndex()
 		
 			# run the tool
-			self.startWorker(inLayer, pgHost, pgPort, pgDBName, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
+			self.startWorker(inLayer, pgHost, pgPort, pgDBName, pgUser, pgPassword, pgLayerName, createFlag, batchSize, targetArea, absorbFlag, direction)
 
 			#--------------------------------------------------------------JJH
