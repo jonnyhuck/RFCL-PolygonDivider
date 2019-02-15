@@ -1,4 +1,4 @@
-# -*  - coding: utf-8 -*  -
+# -*- coding: utf-8 -*-
 
 """
 	/***************************************************************************
@@ -172,6 +172,7 @@ class ExampleWorker(AbstractWorker):
 		# import args to thread
 		self.layer = inLayer
 		self.outputType = outputType
+		self.outFilePath = outFilePath
 		self.pgDetails = pgDetails
 		self.target_area = targetArea
 		self.absorb_flag = absorbFlag
@@ -465,8 +466,8 @@ class ExampleWorker(AbstractWorker):
 		# return the difference between the resulting polygon area (right of the line) and the desired area
 		return self.getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward) - targetArea
 
-
-	def createDBConnection(self)
+        #------------------------- Additional PostGIS methods -------------------------------#
+	def createDBConnection(self):
 		# create DB connection - fail if connection details invalid
 		try:
 			self.dbConn = psycopg2.connect( database = self.pgDetails['database'],
@@ -475,9 +476,9 @@ class ExampleWorker(AbstractWorker):
 											host = self.pgDetails['host'],
 											port = self.pgDetails['port'])
 			self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
-		except:
-			QgsMessageLog.logMessage("PostGreSQL database connection details invalid.", level=QgsMessageLog.CRITICAL)
-			raise Exception("PostGreSQL database connection details invalid.")
+		except Exception as e:
+			QgsMessageLog.logMessage("PostGreSQL database connection details invalid. {0}".format(e), level=QgsMessageLog.CRITICAL)
+			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
 
 
 	def createTable(self, layer, fieldList):
@@ -498,7 +499,7 @@ class ExampleWorker(AbstractWorker):
 			if lowerCase:
 				schema = pgDetails['table']
 			else:
-					table = '"{0}"'.format(pgDetails['table'])
+				table = '"{0}"'.format(pgDetails['table'])
 				lowerCase = (tmp[1] == tmp[1].lower())			
 				if lowerCase:
 					table = tmp[1]
@@ -592,7 +593,8 @@ class ExampleWorker(AbstractWorker):
 		
 		curs = self.dbConn.cursor()
 		curs.execute(insertCmd)
-		curs.close()		
+		curs.close()
+	#---------------------------------------------------------------------- CL #
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
 
@@ -1491,7 +1493,7 @@ class PolygonDivider:
 			parent=self.iface.mainWindow())
  
 		# launch file browser for output file button - link to function
-		self.dlg.pushButton.clicked.connect(self.select_output_file)
+		self.dlg.btnBrowse.clicked.connect(self.select_output_file)
 
 
 	def unload(self):
@@ -1525,9 +1527,10 @@ class PolygonDivider:
 			# put the result in the text box on the dialog
 			self.dlg.outputFile.setText(filename)
 
+#--- CL : Extract PostGIS settings from QGIS PostgreSQL Connection
 	def extract_PostGIS_connection_details(self):
 	 
-		 pgConName = seldf.dlg.cboPGConnection.currentText()
+		 pgConName = self.dlg.cboPGConnection.currentText()
 
 		 pgDetails = dict()
 		 
@@ -1537,13 +1540,13 @@ class PolygonDivider:
 			raise Exception('The selected PostGIS connection details could not be found, please check your settings')
 		 pgDetails['host'] = s.value("PostgreSQL/connections/{0}/host".format(pgConName), '')
 		 pgDetails['port'] = s.value("PostgreSQL/connections/{0}/port".format(pgConName), '')
-		 pgDetails['user'] = s.value("PostgreSQL/connections/{0}/user".format(pgConName), '')
+		 pgDetails['user'] = s.value("PostgreSQL/connections/{0}/user".format(pgConName), 'postgres')
 		 pgDetails['password'] = s.value("PostgreSQL/connections/{0}/password".format(pgConName), '')
 		 
 		 if len(pgDetails['user']) == 0 or len(pgDetails['password']) == 0:
 			uri = QgsDataSourceURI()
 			uri.setConnection(pgDetails['host'], pgDetails['port'], pgDetails['database'], pgDetails['user'], pgDetails['password'])
-			(success, pgDetails['user'], pgDetails['password']) = QgsCredentials.instance().get(uri, pgDetails['user'], pgDetails['password'])
+			(success, pgDetails['user'], pgDetails['password']) = QgsCredentials.instance().get(uri.uri(), pgDetails['user'], pgDetails['password'])
 			if not success:
 				raise Exception('Either user name or password for PostgreSQL were not entered, please try again')
 		
@@ -1579,13 +1582,8 @@ class PolygonDivider:
 		s = QtCore.QSettings()
 		s.beginGroup('PostgreSQL/connections')
 		for connectionName in s.childGroups():
-			self.cboPGConnection.addItem(connectionName)
+			self.dlg.cboPGConnection.addItem(connectionName)
 		s.endGroup()
-
-		layer_list = []
-		for layer in layers:
-			 layer_list.append(layer.name())
-		self.dlg.cboLayer.addItems(layer_list)
 
 		# populate cboCutDir with the possible directions
 		self.dlg.cboCutDir.clear() # need to clear here or it will add them all again every time the dialog is opened
@@ -1609,15 +1607,16 @@ class PolygonDivider:
 			inLayer = layers[self.dlg.cboLayer.currentIndex()]
 			outFilePath = None
 			pgDetails = None
-			if rbShapefile.checkState() == Qt.Checked:
+			if self.dlg.rbShapefile.isChecked():
 				outputType = 'Shapefile'
 				outFilePath = self.dlg.outputFile.text()
 				if outFilePath == '':
 					QgsMessageLog.logMessage("Output shapefile not specified.", level=QgsMessageLog.CRITICAL)
 					raise Exception("Output shapefile not specified.")
-			if rbPostgreSQL.checkState() == Qt.Checked:
+			#--- CL : Get PostGIS settings
+			if self.dlg.rbPostgreSQL.isChecked():
 				outputType = 'PostGIS'
-				pgDetails = self.extract_PostGIS_connection_details
+				pgDetails = self.extract_PostGIS_connection_details()
 				pgDetails['table'] = self.dlg.pgTable.text()
 				if pgDetails['table'] == '':
 					QgsMessageLog.logMessage("PostgreSQL connection or table not specified.", level=QgsMessageLog.CRITICAL)
@@ -1626,7 +1625,7 @@ class PolygonDivider:
 					pgDetails['batch_size'] = int(self.dlg.batchSize.text())
 				except:
 					pgDetails['batch_size'] = 10
-			targetArea = float(self.dlg.lineEdit.text())
+			targetArea = float(self.dlg.targetArea.text())
 			absorbFlag = self.dlg.chkOffcuts.isChecked()
 			direction = self.dlg.cboCutDir.currentIndex()
 		
