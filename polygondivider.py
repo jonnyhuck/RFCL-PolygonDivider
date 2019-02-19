@@ -513,8 +513,10 @@ class ExampleWorker(AbstractWorker):
 		sqlCmd.append('geom geometry(Polygon,{0})'.format(self.crs))
 		fieldNames = []	
 		fieldNames.append('geom')
+		idList = ['id']
+		idCount = 0           
 		for field in fieldList:
-			if dp.name() == 'postgres':
+			if dp.name() == 'postgres' and field.typeName() != '':
 				if field.length() == -1:
 					fType = field.typeName()
 				else:
@@ -532,36 +534,36 @@ class ExampleWorker(AbstractWorker):
 						fType = 'bigint'
 					else:
 						fType = 'int'
-				 elif field.type() == 6:
-					 fType = 'float8'
-				 elif field.type() == 10:
-					 if field.typeName() == 'bool' or field.typeName() == 'boolean':
-						 fType = 'boolean'
-					 else:
-						 fType = 'varchar'
-						 if field.length() > 0:
-							 fType += '({0})'.format(field.length())
-				 elif field.type() == 14:
-					 fType = 'date'
-				 elif field.type() == 16:
-					 fType = 'timestamp'
-			# ensure we do not get multiple id columns with same name    
+				elif field.type() == 6:
+					fType = 'float8'
+				elif field.type() == 10:
+					if field.typeName() == 'bool' or field.typeName() == 'boolean':
+						fType = 'boolean'
+					else:
+						fType = 'varchar'
+						if field.length() > 0:
+							fType += '({0})'.format(field.length())
+				elif field.type() == 14:
+					fType = 'date'
+				elif field.type() == 16:
+					fType = 'timestamp'
+   			# ensure we do not get multiple id columns with same name    
 			if field.name().lower().startswith('id'):
 				if field.name().lower() in idList:
-					newName = '{0}_{1}'.format(field.name().lower(),idCount)        
+					newName = '{0}_{1}'.format(field.name().lower(), idCount)        
 					while newName in idList:
 						idCount += 1
-						newName = '{0}_{1}'.format(field.name().lower(),idCount)
+						newName = '{0}_{1}'.format(field.name().lower(), idCount)
 					idList.append(newName)
 					fieldNames.append(newName)
-					sqlCmd.append('{0} {1}'.format(newName,fType))
+					sqlCmd.append('{0} {1}'.format(newName, fType))
 				else:
 					idList.append(field.name().lower())
 					fieldNames.append(field.name().lower())
-					sqlCmd.append('{0} {1}'.format(field.name().lower(),fType))
+					sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
 			else:
 				fieldNames.append(field.name().lower())
-				sqlCmd.append('{0} {1}'.format(field.name().lower(),fType))
+				sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
 		createCmd = 'CREATE TABLE {0}.{1} ({2})'.format(schema,table,','.join(sqlCmd))
 		self.fieldStr = ','.join(fieldNames)
 		
@@ -581,7 +583,7 @@ class ExampleWorker(AbstractWorker):
 		sqlValues.append('ST_GeomFromText(\'{0}\', 27700)'.format(feat.geometry().exportToWkt()))
 		fields = feat.fields()
 		attributes = feat.attributes()
-		for n in range(fields.length()):
+		for n in range(len(fields)):
 			if attributes[n] == NULL:
 					sqlValues.append('{0}'.format(attributes[n]))
 			else:
@@ -593,9 +595,11 @@ class ExampleWorker(AbstractWorker):
 							sqlValues.append('false')
 						else:				
 							sqlValues.append('NULL')
-				elif fields[n].type() == 6:
+					else:
+						sqlValues.append('{0}'.format(attributes[n]))
+				elif fields[n].type() == 4 or fields[n].type() == 6:
 					sqlValues.append('{0}'.format(attributes[n]))
-				elif field.type() == 10:
+				elif fields[n].type() == 10:
 					if fields[n].typeName() == 'bool':
 						if attributes[n] == 't':
 							sqlValues.append('true')
@@ -606,9 +610,9 @@ class ExampleWorker(AbstractWorker):
 					else:
 						# insert value handling apostrophes
 						sqlValues.append('\'{0}\''.format(attributes[n].replace(u'\u2019','\'').replace("'","\'\'")))
-				elif field.type() == 14: # date
+				elif fields[n].type() == 14: # date
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
-				elif field.type() == 16: # date/time
+				elif fields[n].type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
 			
 		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.fieldStr, ','.join(sqlValues))
@@ -623,6 +627,7 @@ class ExampleWorker(AbstractWorker):
 			except:
 				pass
 			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
+   
 	#---------------------------------------------------------------------- CL #
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
@@ -687,7 +692,7 @@ class ExampleWorker(AbstractWorker):
 			fieldList.append(QgsField('POINTY',QVariant.Int))
 
 		if self.outputType == 'PostGIS':
-			self.crs = layer.crs().postgisSrid()   
+			self.crs = layer.crs().postgisSrid()              
 			self.createTable(layer, fieldList)
 		else:
 			# create a new shapefile to write the results to
@@ -698,6 +703,7 @@ class ExampleWorker(AbstractWorker):
 
 		# init feature counter (for ID's)
 		j = 0
+		k = 0  
 
 		# how many sections will we have (for progress bar)
 		iter = layer.getFeatures()
@@ -761,7 +767,7 @@ class ExampleWorker(AbstractWorker):
 					sq = sqrt(targetArea)
 
 					# until there is no more dividing to do...						
-					while poly.area() > targetArea + t:
+					while poly.area() > targetArea + t and self.killed == False:
 
 						# the bounds are used for the interval
 						boundsR = poly.geometry().boundingBox()
@@ -1213,9 +1219,15 @@ class ExampleWorker(AbstractWorker):
 					except:
 						# this just means that there is no offcut, which is no problem!
 						pass
+					
+					if self.killed:
+						break
 			else:
 				QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", level=QgsMessageLog.CRITICAL)
 				raise Exception("Whoops! That dataset isn't polygons!")
+			
+			if self.killed:
+				break
 		
 		if self.killed:
 			self.cleanup()
