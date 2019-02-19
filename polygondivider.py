@@ -572,7 +572,7 @@ class ExampleWorker(AbstractWorker):
 			self.dbConn.commit()			
 		except Exception as e:
 			self.dbConn.close()	
-			QgsMessageLog.logMessage("Could not create PostGIS table. {0}".format(e), level=QgsMessageLog.CRITICAL)
+			QgsMessageLog.logMessage("Could not create PostGIS table. {0} Command text: {1}".format(e, createCmd), level=QgsMessageLog.CRITICAL)
 			raise Exception("Could not create PostGIS table. {0}".format(e))
 
 
@@ -613,9 +613,16 @@ class ExampleWorker(AbstractWorker):
 			
 		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.fieldStr, ','.join(sqlValues))
 		
-		curs = self.dbConn.cursor()
-		curs.execute(insertCmd)
-		curs.close()
+		try:
+			curs = self.dbConn.cursor()
+			curs.execute(insertCmd)
+			curs.close()
+		except Exception as e:
+			try:
+				curs.close()	
+			except:
+				pass
+			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 	#---------------------------------------------------------------------- CL #
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
@@ -914,10 +921,7 @@ class ExampleWorker(AbstractWorker):
 				
 									# write the feature to the Shapefile/PostGIS table
 									if self.outputType == 'PostGIS':
-										try: 
-											self.writeFeature(fet)
-										except Exception as e: 
-											QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
+										self.writeFeature(fet)
 									else:
 										# write the feature to the out file
 										writer.addFeature(fet)
@@ -1095,10 +1099,7 @@ class ExampleWorker(AbstractWorker):
 					
 							# write the feature to the Shapefile/PostGIS table
 							if self.outputType == 'PostGIS':
-								try: 
-									self.writeFeature(fet)
-								except Exception as e: 
-									QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
+								self.writeFeature(fet)
 							else:
 								# write the feature to the out file
 								writer.addFeature(fet)
@@ -1143,10 +1144,7 @@ class ExampleWorker(AbstractWorker):
 				
 						# write the feature to the Shapefile/PostGIS table
 						if self.outputType == 'PostGIS':
-							try: 
-								self.writeFeature(fet)
-							except Exception as e: 
-								QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
+							self.writeFeature(fet)
 						else:
 							# write the feature to the out file
 							writer.addFeature(fet)
@@ -1192,10 +1190,7 @@ class ExampleWorker(AbstractWorker):
 				
 						# write the feature to the Shapefile/PostGIS table
 						if self.outputType == 'PostGIS':
-							try: 
-								self.writeFeature(fet)
-							except Exception as e: 
-								QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
+							self.writeFeature(fet)
 						else:
 							# write the feature to the out file
 							writer.addFeature(fet)
