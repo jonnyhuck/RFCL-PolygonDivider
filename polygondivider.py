@@ -472,7 +472,7 @@ class ExampleWorker(AbstractWorker):
 		try:
 			self.dbConn = psycopg2.connect( database = self.pgDetails['database'],
 											user = self.pgDetails['user'],
-											password = pgDetails['password'],
+											password = self.pgDetails['password'],
 											host = self.pgDetails['host'],
 											port = self.pgDetails['port'])
 			self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
@@ -484,53 +484,59 @@ class ExampleWorker(AbstractWorker):
 	def createTable(self, layer, fieldList):
 		# create new PostGIS table to write the results to
 		dp = layer.dataProvider()
-		tmp = pgDetails['table'].split('.')
+		tmp = self.pgDetails['table'].split('.')
 		
 		# add double quotes if schema/table in upper case
 		if len(tmp) == 1:
 			schema = 'public'
-			lowerCase = (pgDetails['table'] == pgDetails['table'].lower())			
+			lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())			
 			if lowerCase:
-				table = pgDetails['table']
+				table = self.pgDetails['table']
 			else:
-				table = '"{0}"'.format(pgDetails['table'])
+				table = '"{0}"'.format(self.pgDetails['table'])
 		else:		
 			lowerCase = (tmp[0] == tmp[0].lower())			
 			if lowerCase:
-				schema = pgDetails['table']
+				schema = tmp[0]
 			else:
-				table = '"{0}"'.format(pgDetails['table'])
-				lowerCase = (tmp[1] == tmp[1].lower())			
-				if lowerCase:
-					table = tmp[1]
-				else:
-					table = '"{0}"'.format([tmp1])
+				schema = '"{0}"'.format(tmp[0])
+			
+			lowerCase = (tmp[1] == tmp[1].lower())			
+			if lowerCase:
+				table = tmp[1]
+			else:
+				table = '"{0}"'.format(tmp[1])
 		
 		# build SQL command and field name string
 		sqlCmd = []
-		sqlCmd.append('id serial primary key,')	
-		sqlCmd.append('geom geometry(Polygon,{0}),'.format(self.crs))
+		sqlCmd.append('id serial primary key')	
+		sqlCmd.append('geom geometry(Polygon,{0})'.format(self.crs))
 		fieldNames = []	
 		fieldNames.append('geom')
 		for field in fieldList:
 			if dp.name() == 'postgres':
-				 if field.length() == -1:
-					 fType = field.typeName()
-				 else:			
-					 fType = '{0}({1})'.format(field.typeName, field.length())
-			else:		 
-				 if field.type() == 1:
-					 fType = 'boolean'
-				 elif field.type() == 2:
-					 if field.typeName() == 'bit':
-						 fType = 'boolean'					
-					 else: 
-						 fType = 'int'
+				if field.length() == -1:
+					fType = field.typeName()
+				else:
+					fType = '{0}({1})'.format(field.typeName(), field.length())
+			else:
+				if field.type() == 1:
+					fType = 'boolean'
+				elif field.type() == 2:
+					if field.typeName() == 'bit':
+						fType = 'boolean'
+					else: 
+						fType = 'int'
+				elif field.type() == 4:
+					if field.length() > 10:
+						fType = 'bigint'
+					else:
+						fType = 'int'
 				 elif field.type() == 6:
 					 fType = 'float8'
 				 elif field.type() == 10:
 					 if field.typeName() == 'bool' or field.typeName() == 'boolean':
-						 fType = 'boolean'					
+						 fType = 'boolean'
 					 else:
 						 fType = 'varchar'
 						 if field.length() > 0:
@@ -539,8 +545,23 @@ class ExampleWorker(AbstractWorker):
 					 fType = 'date'
 				 elif field.type() == 16:
 					 fType = 'timestamp'
-			fieldNames.append(field.name().lower())
-			sqlCmd.append('{0} {1},'.format(field.name().lower(),fType))
+			# ensure we do not get multiple id columns with same name    
+			if field.name().lower().startswith('id'):
+				if field.name().lower() in idList:
+					newName = '{0}_{1}'.format(field.name().lower(),idCount)        
+					while newName in idList:
+						idCount += 1
+						newName = '{0}_{1}'.format(field.name().lower(),idCount)
+					idList.append(newName)
+					fieldNames.append(newName)
+					sqlCmd.append('{0} {1}'.format(newName,fType))
+				else:
+					idList.append(field.name().lower())
+					fieldNames.append(field.name().lower())
+					sqlCmd.append('{0} {1}'.format(field.name().lower(),fType))
+			else:
+				fieldNames.append(field.name().lower())
+				sqlCmd.append('{0} {1}'.format(field.name().lower(),fType))
 		createCmd = 'CREATE TABLE {0}.{1} ({2})'.format(schema,table,','.join(sqlCmd))
 		self.fieldStr = ','.join(fieldNames)
 		
@@ -583,13 +604,14 @@ class ExampleWorker(AbstractWorker):
 						else:
 							sqlValues.append('NULL')
 					else:
-						sqlValues.append('\'{0}\''.format(attributes[n]))
+						# insert value handling apostrophes
+						sqlValues.append('\'{0}\''.format(attributes[n].replace(u'\u2019','\'').replace("'","\'\'")))
 				elif field.type() == 14: # date
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
 				elif field.type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
 			
-		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgLayerName, self.fieldStr, ','.join(sqlValues))
+		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.fieldStr, ','.join(sqlValues))
 		
 		curs = self.dbConn.cursor()
 		curs.execute(insertCmd)
@@ -639,7 +661,7 @@ class ExampleWorker(AbstractWorker):
 		ERROR_FLAG_2 = False	# tracks change direction from forward to backward (or vice versa) by switching forward_flag
 		ERROR_FLAG_3 = False	# tracks change cutline from horizontal to backward (or vice versa) by switching horizontal_flag
 
-		if outputType == 'PostGIS':
+		if self.outputType == 'PostGIS':
 			self.createDBConnection()
 		
 		# get fields from the input shapefile
@@ -657,7 +679,8 @@ class ExampleWorker(AbstractWorker):
 		if fieldList.fieldNameIndex('POINTY') == -1:
 			fieldList.append(QgsField('POINTY',QVariant.Int))
 
-		if outputType == 'PostGIS':
+		if self.outputType == 'PostGIS':
+			self.crs = layer.crs().postgisSrid()   
 			self.createTable(layer, fieldList)
 		else:
 			# create a new shapefile to write the results to
@@ -890,11 +913,11 @@ class ExampleWorker(AbstractWorker):
 									fet.setGeometry(poly)
 				
 									# write the feature to the Shapefile/PostGIS table
-									if outputType == 'PostGIS':
+									if self.outputType == 'PostGIS':
 										try: 
 											self.writeFeature(fet)
-										except: 
-											QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
+										except Exception as e: 
+											QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
 									else:
 										# write the feature to the out file
 										writer.addFeature(fet)
@@ -904,7 +927,7 @@ class ExampleWorker(AbstractWorker):
 									k+=1
 						
 									# commit to PostgreSQL if required
-									if outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
+									if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
 										self.dbConn.commit()
 										k = 0 
 									 
@@ -1071,11 +1094,11 @@ class ExampleWorker(AbstractWorker):
 							fet.setGeometry(right)
 					
 							# write the feature to the Shapefile/PostGIS table
-							if outputType == 'PostGIS':
+							if self.outputType == 'PostGIS':
 								try: 
 									self.writeFeature(fet)
-								except: 
-									QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
+								except Exception as e: 
+									QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
 							else:
 								# write the feature to the out file
 								writer.addFeature(fet)
@@ -1085,7 +1108,7 @@ class ExampleWorker(AbstractWorker):
 							k+=1
 						
 							# commit to PostgreSQL if required
-							if outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
+							if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
 								self.dbConn.commit()
 								k = 0
 
@@ -1119,11 +1142,11 @@ class ExampleWorker(AbstractWorker):
 						fet.setGeometry(initialSlice)
 				
 						# write the feature to the Shapefile/PostGIS table
-						if outputType == 'PostGIS':
+						if self.outputType == 'PostGIS':
 							try: 
 								self.writeFeature(fet)
-							except: 
-								QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
+							except Exception as e: 
+								QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
 						else:
 							# write the feature to the out file
 							writer.addFeature(fet)
@@ -1133,7 +1156,7 @@ class ExampleWorker(AbstractWorker):
 						k+=1
 						
 						# commit to PostgreSQL if required
-						if outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
+						if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
 							self.dbConn.commit()
 							k = 0
 
@@ -1168,11 +1191,11 @@ class ExampleWorker(AbstractWorker):
 						fet.setGeometry(poly)
 				
 						# write the feature to the Shapefile/PostGIS table
-						if outputType == 'PostGIS':
+						if self.outputType == 'PostGIS':
 							try: 
 								self.writeFeature(fet)
-							except: 
-								QgsMessageLog.logMessage("Feature could not be written to the output table.", level=QgsMessageLog.WARNING)
+							except Exception as e: 
+								QgsMessageLog.logMessage("Feature could not be written to the output table. {0}".format(e), level=QgsMessageLog.WARNING)
 						else:
 							# write the feature to the out file
 							writer.addFeature(fet)
@@ -1182,7 +1205,7 @@ class ExampleWorker(AbstractWorker):
 						k+=1
 						
 						# commit to PostgreSQL if required
-						if outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
+						if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
 							self.dbConn.commit()
 							k = 0
 
@@ -1204,16 +1227,16 @@ class ExampleWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 		
 		# finally, open the resulting file and return it
-		if outputType == 'PostGIS':
+		if self.outputType == 'PostGIS':
 			self.dbConn.commit()
 			self.dbConn.close()
-			uri = QgsDataSourceUri()
-			uri.setConnection(pgDetails['host'], pgDetails['port'], pgDetails['database'], pgDetails['user'], pgDetails['password'])
-			table = self.pgDetails['table'].split('.')
-			if table.length() == 1:		
+			uri = QgsDataSourceURI()
+			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
+			tmp = self.pgDetails['table'].split('.')
+			if len(tmp) == 1:		
 				uri.setDataSource('public', self.pgDetails['table'],'geom','')
 			else:
-				uri.setDataSource(table[0], table[1],'geom','')	
+				uri.setDataSource(tmp[0], tmp[1],'geom','')	
 			uri.setKeyColumn('id')
 			uri.setWkbType(QgsWKBTypes.Polygon)		
 			uri.setSrid(str(self.crs))
