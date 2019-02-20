@@ -59,9 +59,8 @@ from qgis.gui import QgsMessageBar
 '''
 
 
-
 class AbstractWorker(QtCore.QObject):
-	"""Abstract worker, ihnerit from this and implement the work method"""
+	"""Abstract worker, inherit from this and implement the work method"""
 
 	# available signals to be used in the concrete worker
 	finished = QtCore.pyqtSignal(object)
@@ -100,7 +99,7 @@ class AbstractWorker(QtCore.QObject):
 		raise NotImplementedError
 
 	def kill(self):
-		self.is_killed = True
+		self.killed = True
 		self.set_message.emit('Aborting...')
 		self.toggle_show_progress.emit(False)
 
@@ -114,69 +113,282 @@ class BrentError(Exception):
 	def __str__(self):
 		return repr(self.value)
 
-class ExampleWorker(AbstractWorker):
+
+class CoreWorker(AbstractWorker):
 	"""
-	* worker, implement the work method here and raise exceptions if needed
+	* Core worker thread - created by Exegesis SDM to process in batches
 	"""
 
-
-	'''
-
-	******************************* STUFF FOR THE ALGORITHM **********************************
-
-	'''
-
-	#	def __init__(self, steps):
-	#		AbstractWorker.__init__(self)
-	#		self.steps = steps
-		
-			# if a worker cannot define the length of the work it can set an 
-			# undefined progress by using
-			# self.toggle_show_progress.emit(False)
-
-	#	def work(self):
-
-	#		if randint(0, 100) > 70:
-	#			raise RuntimeError('This is a random mistake during the calculation')
-		
-	#		self.toggle_show_progress.emit(False)
-	#		self.toggle_show_cancel.emit(False)
-	#		self.set_message.emit('NOT showing the progress because we dont know the length')
-	#		sleep(randint(0, 10))	 
-		 
-	#		self.toggle_show_cancel.emit(True)
-	#		self.toggle_show_progress.emit(True)		
-	#		self.set_message.emit('Dividing Polygons...')
-		
-	#		for i in range(1, self.steps+1):
-
-
-	#			if self.killed:
-	#				self.cleanup()
-	#				raise UserAbortedNotification('USER Killed')
-
-				# wait one second
-	#			time.sleep(1)
-	#			self.progress.emit(i * 100/self.steps)
-
-	#		return True
-
-	def __init__(self, inLayer, outputType, outFilePath, pgDetails, targetArea, absorbFlag, direction):
+	# add additional signal to say batch finished and trigger new batch
+	batch_finished = QtCore.pyqtSignal(bool)
+	
+	def __init__(self, iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction):
 		"""
-		* Initialise Thread	
+		* Initialise Thread
 		"""
 
 		# superclass
 		AbstractWorker.__init__(self)
 
 		# import args to thread
+		self.iface = iface
 		self.layer = inLayer
 		self.outputType = outputType
 		self.outFilePath = outFilePath
 		self.pgDetails = pgDetails
+		self.chunk_size = chunkSize
 		self.target_area = targetArea
 		self.absorb_flag = absorbFlag
 		self.direction = direction
+
+	#------------------------- Additional PostGIS methods -------------------------------#
+	def createDBConnection(self):
+		# create DB connection - fail if connection details invalid
+		try:
+			self.dbConn = psycopg2.connect( database = self.pgDetails['database'],
+											user = self.pgDetails['user'],
+											password = self.pgDetails['password'],
+											host = self.pgDetails['host'],
+											port = self.pgDetails['port'])
+			self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+		except Exception as e:
+			QgsMessageLog.logMessage("PostGreSQL database connection details invalid. {0}".format(e), level=QgsMessageLog.CRITICAL)
+			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
+
+
+	def createTable(self, layer, fieldList):
+		# create new PostGIS table to write the results to
+		dp = layer.dataProvider()
+		tmp = self.pgDetails['table'].split('.')
+		
+		# add double quotes if schema/table in upper case
+		if len(tmp) == 1:
+			schema = 'public'
+			lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())			
+			if lowerCase:
+				table = self.pgDetails['table']
+			else:
+				table = '"{0}"'.format(self.pgDetails['table'])
+		else:		
+			lowerCase = (tmp[0] == tmp[0].lower())			
+			if lowerCase:
+				schema = tmp[0]
+			else:
+				schema = '"{0}"'.format(tmp[0])
+			
+			lowerCase = (tmp[1] == tmp[1].lower())			
+			if lowerCase:
+				table = tmp[1]
+			else:
+				table = '"{0}"'.format(tmp[1])
+		
+		# build SQL command and field name string
+		sqlCmd = []
+		sqlCmd.append('id serial primary key')	
+		sqlCmd.append('geom geometry(Polygon,{0})'.format(self.crs))
+		fieldNames = []	
+		fieldNames.append('geom')
+		idList = ['id']
+		idCount = 0           
+		for field in fieldList:
+			if dp.name() == 'postgres' and field.typeName() != '':
+				if field.length() == -1:
+					fType = field.typeName()
+				else:
+					fType = '{0}({1})'.format(field.typeName(), field.length())
+			else:
+				if field.type() == 1:
+					fType = 'boolean'
+				elif field.type() == 2:
+					if field.typeName() == 'bit':
+						fType = 'boolean'
+					else: 
+						fType = 'int'
+				elif field.type() == 4:
+					if field.length() > 10:
+						fType = 'bigint'
+					else:
+						fType = 'int'
+				elif field.type() == 6:
+					fType = 'float8'
+				elif field.type() == 10:
+					if field.typeName() == 'bool' or field.typeName() == 'boolean':
+						fType = 'boolean'
+					else:
+						fType = 'varchar'
+						if field.length() > 0:
+							fType += '({0})'.format(field.length())
+				elif field.type() == 14:
+					fType = 'date'
+				elif field.type() == 16:
+					fType = 'timestamp'
+   			# ensure we do not get multiple id columns with same name    
+			if field.name().lower().startswith('id'):
+				if field.name().lower() in idList:
+					newName = '{0}_{1}'.format(field.name().lower(), idCount)        
+					while newName in idList:
+						idCount += 1
+						newName = '{0}_{1}'.format(field.name().lower(), idCount)
+					idList.append(newName)
+					fieldNames.append(newName)
+					sqlCmd.append('{0} {1}'.format(newName, fType))
+				else:
+					idList.append(field.name().lower())
+					fieldNames.append(field.name().lower())
+					sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
+			else:
+				fieldNames.append(field.name().lower())
+				sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
+		createCmd = 'CREATE TABLE {0}.{1} ({2})'.format(schema,table,','.join(sqlCmd))
+		self.fieldStr = ','.join(fieldNames)
+		
+		try:
+			curs = self.dbConn.cursor()
+			curs.execute(createCmd)
+			curs.close() 
+			self.dbConn.commit()			
+		except Exception as e:
+			self.dbConn.close()	
+			QgsMessageLog.logMessage("Could not create PostGIS table. {0} Command text: {1}".format(e, createCmd), level=QgsMessageLog.CRITICAL)
+			raise Exception("Could not create PostGIS table. {0}".format(e))
+
+# ---------------------------------- MAIN FUNCTION ------------------------------------- #
+
+	def work(self):
+		"""
+		* Actually do the processing
+		"""
+		
+		# setup for progress bar and message
+		self.toggle_show_cancel.emit(True)
+		self.toggle_show_progress.emit(True)
+		self.set_message.emit('Dividing Polygons')
+		
+		# get fields from the input shapefile
+		layer = self.layer
+		fieldList = layer.fields()
+
+		# add new fields for this tool
+		if fieldList.fieldNameIndex('POLY_ID') == -1:
+			fieldList.append(QgsField('POLY_ID',QVariant.Int))
+		if fieldList.fieldNameIndex('UNIQUE_ID') == -1:
+			fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
+		if fieldList.fieldNameIndex('AREA') == -1:
+			fieldList.append(QgsField('AREA', QVariant.Double))
+		if fieldList.fieldNameIndex('POINTX') == -1:
+			fieldList.append(QgsField('POINTX',QVariant.Int))
+		if fieldList.fieldNameIndex('POINTY') == -1:
+			fieldList.append(QgsField('POINTY',QVariant.Int))
+
+		if self.outputType == 'PostGIS':
+			self.createDBConnection()
+			self.crs = layer.crs().postgisSrid()
+			self.createTable(layer, fieldList)
+			self.dbConn.close()
+			writer = None
+		else:
+			# create a new shapefile to write the results to
+			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+		
+		# how many features / sections will we have (for progress bar)
+		iter = self.layer.getFeatures()
+		featCount = 0
+		totalArea = 0
+		for feat in iter:
+			featCount += 1
+			totalArea += feat.geometry().area()
+		del iter
+		
+		if self.chunk_size < 1:
+			QgsMessageLog.logMessage("Chunk size invalid, defaulting to 50", level=QgsMessageLog.CRITICAL)
+			self.chunk_size = 50
+		
+		# calculate no. of batches / progress bar divisions
+		noBatches = featCount // self.chunk_size
+		totalDivisions = totalArea // self.target_area
+		
+		# initialise progress counter
+		noCompleted = 0
+
+		# check if you've been killed		
+		if self.killed:
+			self.cleanup()
+			raise UserAbortedNotification('USER Killed')
+
+		# filter rows in layer
+		if self.layer.dataProvider().name() == 'ogr':
+			key_field = 'fid'
+		else:
+			uri = QgsDataSourceURI(self.layer.dataProvider().dataSourceUri())
+			key_field = uri.keyColumn()
+			if key_field == '':
+				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
+				raise Exception("Layer must have a integer key column. {0}".format(e))
+			
+			if self.layer.fields()[self.layer.fieldNameIndex(self.key_field)].type() != 2:
+				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
+				raise Exception("Layer must have an integer key column")
+		
+		for i in range(noBatches):
+			batchMin = i * self.chunk_size
+			batchMax = (i + 1) * self.chunk_size
+			filtered = self.layer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
+			if filtered:
+			# run example worker
+				example_worker = ExampleWorker(self, layer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, noCompleted)
+				result = example_worker.work()
+			else:
+				QgsMessageLog.logMessage("Layer could not be filtered.", level=QgsMessageLog.CRITICAL)
+				raise Exception("Layer could not be filtered.")
+		
+		if self.killed:
+			self.cleanup()
+			raise UserAbortedNotification('USER Killed')
+		
+		# finally, open the resulting file and return it
+		if worker.outputType == 'PostGIS':
+			uri = QgsDataSourceURI()
+			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
+			tmp = self.pgDetails['table'].split('.')
+			if len(tmp) == 1:		
+				uri.setDataSource('public', self.pgDetails['table'],'geom','')
+			else:
+				uri.setDataSource(tmp[0], tmp[1],'geom','')	
+				uri.setKeyColumn('id')
+				uri.setWkbType(QgsWKBTypes.Polygon)		
+				uri.setSrid(str(self.crs))
+				layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
+		else:
+			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+		
+		if layer.isValid():
+			return layer
+		else:
+			return None
+
+
+	def cleanup(self):
+#		 print "cleanup here"
+		try:
+			self.dbConn.close() 
+		except:
+			pass	
+
+
+class ExampleWorker():
+	def __init__(self, parent, inLayer, fieldList, outputType, writer, pgDetails, targetArea, absorbFlag, direction, noCompleted):
+
+		# import args
+		self.parent = parent
+		self.layer = inLayer
+		self.fieldList = fieldList
+		self.outputType = outputType
+		self.writer = writer
+		self.pgDetails = pgDetails
+		self.target_area = targetArea
+		self.absorb_flag = absorbFlag
+		self.direction = direction
+		self.noCompleted = noCompleted
 
 
 	def brent(self, xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
@@ -466,7 +678,7 @@ class ExampleWorker(AbstractWorker):
 		# return the difference between the resulting polygon area (right of the line) and the desired area
 		return self.getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward) - targetArea
 
-        #------------------------- Additional PostGIS methods -------------------------------#
+	#------------------------- Additional PostGIS methods -------------------------------#
 	def createDBConnection(self):
 		# create DB connection - fail if connection details invalid
 		try:
@@ -481,111 +693,14 @@ class ExampleWorker(AbstractWorker):
 			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
 
 
-	def createTable(self, layer, fieldList):
-		# create new PostGIS table to write the results to
-		dp = layer.dataProvider()
-		tmp = self.pgDetails['table'].split('.')
-		
-		# add double quotes if schema/table in upper case
-		if len(tmp) == 1:
-			schema = 'public'
-			lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())			
-			if lowerCase:
-				table = self.pgDetails['table']
-			else:
-				table = '"{0}"'.format(self.pgDetails['table'])
-		else:		
-			lowerCase = (tmp[0] == tmp[0].lower())			
-			if lowerCase:
-				schema = tmp[0]
-			else:
-				schema = '"{0}"'.format(tmp[0])
-			
-			lowerCase = (tmp[1] == tmp[1].lower())			
-			if lowerCase:
-				table = tmp[1]
-			else:
-				table = '"{0}"'.format(tmp[1])
-		
-		# build SQL command and field name string
-		sqlCmd = []
-		sqlCmd.append('id serial primary key')	
-		sqlCmd.append('geom geometry(Polygon,{0})'.format(self.crs))
-		fieldNames = []	
-		fieldNames.append('geom')
-		idList = ['id']
-		idCount = 0           
-		for field in fieldList:
-			if dp.name() == 'postgres' and field.typeName() != '':
-				if field.length() == -1:
-					fType = field.typeName()
-				else:
-					fType = '{0}({1})'.format(field.typeName(), field.length())
-			else:
-				if field.type() == 1:
-					fType = 'boolean'
-				elif field.type() == 2:
-					if field.typeName() == 'bit':
-						fType = 'boolean'
-					else: 
-						fType = 'int'
-				elif field.type() == 4:
-					if field.length() > 10:
-						fType = 'bigint'
-					else:
-						fType = 'int'
-				elif field.type() == 6:
-					fType = 'float8'
-				elif field.type() == 10:
-					if field.typeName() == 'bool' or field.typeName() == 'boolean':
-						fType = 'boolean'
-					else:
-						fType = 'varchar'
-						if field.length() > 0:
-							fType += '({0})'.format(field.length())
-				elif field.type() == 14:
-					fType = 'date'
-				elif field.type() == 16:
-					fType = 'timestamp'
-   			# ensure we do not get multiple id columns with same name    
-			if field.name().lower().startswith('id'):
-				if field.name().lower() in idList:
-					newName = '{0}_{1}'.format(field.name().lower(), idCount)        
-					while newName in idList:
-						idCount += 1
-						newName = '{0}_{1}'.format(field.name().lower(), idCount)
-					idList.append(newName)
-					fieldNames.append(newName)
-					sqlCmd.append('{0} {1}'.format(newName, fType))
-				else:
-					idList.append(field.name().lower())
-					fieldNames.append(field.name().lower())
-					sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
-			else:
-				fieldNames.append(field.name().lower())
-				sqlCmd.append('{0} {1}'.format(field.name().lower(), fType))
-		createCmd = 'CREATE TABLE {0}.{1} ({2})'.format(schema,table,','.join(sqlCmd))
-		self.fieldStr = ','.join(fieldNames)
-		
-		try:
-			curs = self.dbConn.cursor()
-			curs.execute(createCmd)
-			curs.close() 
-			self.dbConn.commit()			
-		except Exception as e:
-			self.dbConn.close()	
-			QgsMessageLog.logMessage("Could not create PostGIS table. {0} Command text: {1}".format(e, createCmd), level=QgsMessageLog.CRITICAL)
-			raise Exception("Could not create PostGIS table. {0}".format(e))
-
-
 	def writeFeature(self, feat):
 		sqlValues = []
-		sqlValues.append('ST_GeomFromText(\'{0}\', 27700)'.format(feat.geometry().exportToWkt()))
+		sqlValues.append('ST_GeomFromText(\'{0}\', {1})'.format(feat.geometry().exportToWkt(),self.crs))
 		fields = feat.fields()
 		attributes = feat.attributes()
 		for n in range(len(fields)):
 			if attributes[n] == NULL:
-					sqlValues.append('{0}'.format(attributes[n]))
+				sqlValues.append('{0}'.format(attributes[n]))
 			else:
 				if fields[n].type() == 2:
 					if fields[n].typeName() == 'bit':
@@ -627,7 +742,7 @@ class ExampleWorker(AbstractWorker):
 			except:
 				pass
 			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
-   
+
 	#---------------------------------------------------------------------- CL #
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
@@ -637,13 +752,9 @@ class ExampleWorker(AbstractWorker):
 		* Actually do the processing
 		"""
 		
-		# setup for progress bar ad message
-		self.toggle_show_cancel.emit(True)
-		self.toggle_show_progress.emit(True)		
-		self.set_message.emit('Dividing Polygons')
-			
 		# TODO: reference these properly
 		layer = self.layer
+		fieldList = self.fieldList
 		target_area = self.target_area
 		absorb_flag = self.absorb_flag
 		direction = self.direction
@@ -675,42 +786,14 @@ class ExampleWorker(AbstractWorker):
 
 		if self.outputType == 'PostGIS':
 			self.createDBConnection()
-		
-		# get fields from the input shapefile
-		fieldList = layer.fields()
-
-		# add new fields for this tool
-		if fieldList.fieldNameIndex('POLY_ID') == -1:
-			fieldList.append(QgsField('POLY_ID',QVariant.Int))
-		if fieldList.fieldNameIndex('UNIQUE_ID') == -1:
-			fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
-		if fieldList.fieldNameIndex('AREA') == -1:
-			fieldList.append(QgsField('AREA', QVariant.Double))
-		if fieldList.fieldNameIndex('POINTX') == -1:
-			fieldList.append(QgsField('POINTX',QVariant.Int))
-		if fieldList.fieldNameIndex('POINTY') == -1:
-			fieldList.append(QgsField('POINTY',QVariant.Int))
-
-		if self.outputType == 'PostGIS':
 			self.crs = layer.crs().postgisSrid()              
-			self.createTable(layer, fieldList)
-		else:
-			# create a new shapefile to write the results to
-			writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 
 		# define this to ensure that it's global
 		subfeatures = []
 
 		# init feature counter (for ID's)
-		j = 0
-		k = 0  
-
-		# how many sections will we have (for progress bar)
-		iter = layer.getFeatures()
-		totalArea = 0
-		for feat in iter:
-			totalArea += feat.geometry().area()
-		totalDivisions = totalArea // target_area
+		j = self.noCompleted
+		k = 0
 
 		# check if you've been killed		
 		if self.killed:
@@ -721,7 +804,10 @@ class ExampleWorker(AbstractWorker):
 		 
 		iter = layer.getFeatures()
 		for feat in iter:
-
+			# check if you've been killed
+			if self.killed:
+				break
+			
 			# verify that it is a polygon
 			if feat.geometry().wkbType() == QGis.WKBPolygon or feat.geometry().wkbType() == QGis.WKBMultiPolygon:	## if geom.type() == QGis.Polygon:
 
@@ -749,7 +835,10 @@ class ExampleWorker(AbstractWorker):
 	
 				#loop through the geometries
 				for poly in subfeatures:
-
+					# check if you've been killed
+					if self.killed:
+						break
+					
 					# how many polygons are we going to have to chop off?
 					nPolygons = int(poly.area() // target_area)
 
@@ -767,8 +856,11 @@ class ExampleWorker(AbstractWorker):
 					sq = sqrt(targetArea)
 
 					# until there is no more dividing to do...						
-					while poly.area() > targetArea + t and self.killed == False:
-
+					while poly.area() > targetArea + t:
+						# check if you've been killed
+						if self.killed:
+							break
+						
 						# the bounds are used for the interval
 						boundsR = poly.geometry().boundingBox()
 						bounds = [boundsR.xMinimum(), boundsR.yMinimum(), boundsR.xMaximum(), boundsR.yMaximum()]
@@ -804,6 +896,9 @@ class ExampleWorker(AbstractWorker):
 		
 							# if it fails, try increasing nSubdivisions (k) until it works or you get a different error
 							while True:
+								# check if you've been killed
+								if self.killed:
+									break
 	
 								# how big must the target area be to support this many subdivisions?
 								initialTargetArea = nSubdivisions * targetArea
@@ -841,6 +936,9 @@ class ExampleWorker(AbstractWorker):
 								nSubdivisions = nSubdivisions2	# reset
 								limit = 1
 								while nSubdivisions >= limit:
+									# check if you've been killed
+									if self.killed:
+										break
 		
 									# set the flag if it's the last time around
 									if nSubdivisions == limit:
@@ -943,7 +1041,7 @@ class ExampleWorker(AbstractWorker):
 									 
 									# update progress bar if required
 									if j // totalDivisions * 100 > currProgress:
-										self.progress.emit(j // totalDivisions * 100)
+										parent.progress.emit(j // totalDivisions * 100)
 							
 									# log that there was a problem
 									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset.", level=QgsMessageLog.WARNING)
@@ -984,7 +1082,10 @@ class ExampleWorker(AbstractWorker):
 
 						#...then divide that into sections of targetArea
 						for k in range(nSubdivisions-1):	# nCuts = nPieces - 1
-
+							# check if you've been killed
+							if self.killed:
+								break
+							
 							# the bounds are used for the interval
 							sliceBoundsR = initialSlice.boundingBox()
 							sliceBounds = [sliceBoundsR.xMinimum(), sliceBoundsR.yMinimum(), sliceBoundsR.xMaximum(), sliceBoundsR.yMaximum()]
@@ -1006,10 +1107,13 @@ class ExampleWorker(AbstractWorker):
 
 							# infinite loop
 							while True:
-	
+								# check if you've been killed
+								if self.killed:
+									break
+								
 								# brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal cut)
-								try:									
-		
+								try:
+								
 									# search for result
 									sliceResult = self.brent(sliceInterval[0], sliceInterval[1], 1e-6, tol, 500, initialSlice, sliceFixedCoords[0], sliceFixedCoords[1], targetArea, sliceHorizontal, forward_flag)
 			
@@ -1122,8 +1226,7 @@ class ExampleWorker(AbstractWorker):
 							# update progress bar if required
 							if int((j*1.0) / totalDivisions * 100) > currProgress:
 								currProgress = int((j*1.0) / totalDivisions * 100)
-								self.progress.emit(currProgress)
-
+								parent.progress.emit(currProgress)
 
 						## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
 
@@ -1167,7 +1270,7 @@ class ExampleWorker(AbstractWorker):
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
 							currProgress = int((j*1.0) / totalDivisions * 100)
-							self.progress.emit(currProgress)
+							parent.progress.emit(currProgress)
 
 					try:
 			
@@ -1213,58 +1316,23 @@ class ExampleWorker(AbstractWorker):
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
 							currProgress = int((j*1.0) / totalDivisions * 100)
-							self.progress.emit(currProgress)
+							parent.progress.emit(currProgress)
 
-				
 					except:
 						# this just means that there is no offcut, which is no problem!
 						pass
 					
-					if self.killed:
-						break
 			else:
 				QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", level=QgsMessageLog.CRITICAL)
 				raise Exception("Whoops! That dataset isn't polygons!")
-			
-			if self.killed:
-				break
 		
 		if self.killed:
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 		
-		# finally, open the resulting file and return it
-		if self.outputType == 'PostGIS':
-			self.dbConn.commit()
-			self.dbConn.close()
-			uri = QgsDataSourceURI()
-			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
-			tmp = self.pgDetails['table'].split('.')
-			if len(tmp) == 1:		
-				uri.setDataSource('public', self.pgDetails['table'],'geom','')
-			else:
-				uri.setDataSource(tmp[0], tmp[1],'geom','')	
-			uri.setKeyColumn('id')
-			uri.setWkbType(QgsWKBTypes.Polygon)		
-			uri.setSrid(str(self.crs))
-			layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
-		else:
-			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
-		
-		if layer.isValid():
-			return layer
-		else:
-			return None
+		return j
 
 
-
-	'''
-
-	************************* BACK TO STUFF FOR THE WORKER THREAD ************************
-
-	'''
-
-		
 	def cleanup(self):
 #		 print "cleanup here"
 		try:
@@ -1276,10 +1344,15 @@ class ExampleWorker(AbstractWorker):
 class UserAbortedNotification(Exception):
 	pass
 
+'''
+
+***************************** CORE WORKER METHODS ******************************
+
+'''
 
 def start_worker(worker, iface, message, with_progress=True):
 	"""
-	* Launch the worker thread
+	* Launch the core worker thread
 	"""
 
 	# configure the QgsMessageBar
@@ -1318,6 +1391,8 @@ def start_worker(worker, iface, message, with_progress=True):
 		
 	worker.progress.connect(progress_bar.setValue)
 	
+	worker.message_bar = message_bar
+	worker.progress_bar = progress_bar
 	thread.started.connect(worker.run)
 	
 	thread.start()
@@ -1348,7 +1423,7 @@ def worker_finished(result, thread, worker, iface, message_bar):
 	thread.quit()
 	thread.wait()
 	thread.deleteLater()
-		
+
 
 def worker_error(e, exception_string, iface):
 	# notify the user that something went wrong
@@ -1371,7 +1446,6 @@ def toggle_worker_progress(show_progress, progress_bar):
 		
 def toggle_worker_cancel(show_cancel, cancel_button):
 	cancel_button.setVisible(show_cancel)
-
 
 
 '''
@@ -1583,12 +1657,12 @@ class PolygonDivider:
 		 return pgDetails
 	
 
-	def startWorker(self, inLayer, outputType, outFilePath, pgDetails, targetArea, absorbFlag, direction):
+	def startWorker(self, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction):
 		"""
 		* JJH: Run the polygon division in a thread, feed back to progress bar
 		"""
 		
-		worker = ExampleWorker(inLayer, outputType, outFilePath, pgDetails, targetArea, absorbFlag, direction)
+		worker = CoreWorker(self.iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction)
 		start_worker(worker, self.iface, 'Running the worker')
 		
 
@@ -1655,11 +1729,12 @@ class PolygonDivider:
 					pgDetails['batch_size'] = int(self.dlg.batchSize.text())
 				except:
 					pgDetails['batch_size'] = 10
+			chunkSize = int(self.dlg.chunkSize.text())
 			targetArea = float(self.dlg.targetArea.text())
 			absorbFlag = self.dlg.chkOffcuts.isChecked()
 			direction = self.dlg.cboCutDir.currentIndex()
 		
 			# run the tool
-			self.startWorker(inLayer, outputType, outFilePath, pgDetails, targetArea, absorbFlag, direction)
+			self.startWorker(inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction)
 
 			#--------------------------------------------------------------JJH
