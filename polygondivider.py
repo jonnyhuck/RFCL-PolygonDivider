@@ -325,7 +325,7 @@ class CoreWorker(AbstractWorker):
 				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer must have a integer key column. {0}".format(e))
 			
-			if self.layer.fields()[self.layer.fieldNameIndex(self.key_field)].type() != 2:
+			if self.layer.fields()[self.layer.fieldNameIndex(key_field)].type() != 2:
 				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer must have an integer key column")
 		
@@ -335,8 +335,8 @@ class CoreWorker(AbstractWorker):
 			filtered = self.layer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
 			if filtered:
 			# run example worker
-				example_worker = ExampleWorker(self, layer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, noCompleted)
-				result = example_worker.work()
+				self.example_worker = ExampleWorker(self, layer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
+				result = self.example_worker.work()
 			else:
 				QgsMessageLog.logMessage("Layer could not be filtered.", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer could not be filtered.")
@@ -346,7 +346,7 @@ class CoreWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 		
 		# finally, open the resulting file and return it
-		if worker.outputType == 'PostGIS':
+		if self.outputType == 'PostGIS':
 			uri = QgsDataSourceURI()
 			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
 			tmp = self.pgDetails['table'].split('.')
@@ -372,11 +372,17 @@ class CoreWorker(AbstractWorker):
 		try:
 			self.dbConn.close() 
 		except:
-			pass	
+			pass
+	
+	def kill(self):
+		self.killed = True
+		self.example_worker.killed = True
+		self.set_message.emit('Aborting...')
+		self.toggle_show_progress.emit(False)
 
 
 class ExampleWorker():
-	def __init__(self, parent, inLayer, fieldList, outputType, writer, pgDetails, targetArea, absorbFlag, direction, noCompleted):
+	def __init__(self, parent, inLayer, fieldList, outputType, writer, pgDetails, targetArea, absorbFlag, direction, totalDivisions, noCompleted):
 
 		# import args
 		self.parent = parent
@@ -388,7 +394,9 @@ class ExampleWorker():
 		self.target_area = targetArea
 		self.absorb_flag = absorbFlag
 		self.direction = direction
+		self.totalDivisions = totalDivisions
 		self.noCompleted = noCompleted
+		self.killed = False
 
 
 	def brent(self, xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
@@ -730,7 +738,7 @@ class ExampleWorker():
 				elif fields[n].type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
 			
-		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.fieldStr, ','.join(sqlValues))
+		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.parent.fieldStr, ','.join(sqlValues))
 		
 		try:
 			curs = self.dbConn.cursor()
@@ -743,7 +751,7 @@ class ExampleWorker():
 				pass
 			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 
-	#---------------------------------------------------------------------- CL #
+#---------------------------------------------------------------------- CL #
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
 
@@ -794,6 +802,7 @@ class ExampleWorker():
 		# init feature counter (for ID's)
 		j = self.noCompleted
 		k = 0
+		totalDivisions = self.totalDivisions
 
 		# check if you've been killed		
 		if self.killed:
@@ -1041,7 +1050,7 @@ class ExampleWorker():
 									 
 									# update progress bar if required
 									if j // totalDivisions * 100 > currProgress:
-										parent.progress.emit(j // totalDivisions * 100)
+										self.parent.progress.emit(j // totalDivisions * 100)
 							
 									# log that there was a problem
 									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset.", level=QgsMessageLog.WARNING)
@@ -1226,7 +1235,7 @@ class ExampleWorker():
 							# update progress bar if required
 							if int((j*1.0) / totalDivisions * 100) > currProgress:
 								currProgress = int((j*1.0) / totalDivisions * 100)
-								parent.progress.emit(currProgress)
+								self.parent.progress.emit(currProgress)
 
 						## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
 
@@ -1270,7 +1279,7 @@ class ExampleWorker():
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
 							currProgress = int((j*1.0) / totalDivisions * 100)
-							parent.progress.emit(currProgress)
+							self.parent.progress.emit(currProgress)
 
 					try:
 			
@@ -1316,7 +1325,7 @@ class ExampleWorker():
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
 							currProgress = int((j*1.0) / totalDivisions * 100)
-							parent.progress.emit(currProgress)
+							self.parent.progress.emit(currProgress)
 
 					except:
 						# this just means that there is no offcut, which is no problem!
