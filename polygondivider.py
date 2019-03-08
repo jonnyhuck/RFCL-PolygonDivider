@@ -337,6 +337,9 @@ class CoreWorker(AbstractWorker):
 			# run example worker
 				self.example_worker = ExampleWorker(self, layer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
 				result = self.example_worker.work()
+				if result != None:
+					noCompleted = result
+					QgsMessageLog.logMessage("No completed: " + str(noCompleted))
 			else:
 				QgsMessageLog.logMessage("Layer could not be filtered.", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer could not be filtered.")
@@ -376,6 +379,10 @@ class CoreWorker(AbstractWorker):
 	
 	def kill(self):
 		self.killed = True
+		try:
+			self.example_worker.dbConn.close() 
+		except:
+			pass
 		self.example_worker.killed = True
 		self.set_message.emit('Aborting...')
 		self.toggle_show_progress.emit(False)
@@ -766,10 +773,7 @@ class ExampleWorker():
 		target_area = self.target_area
 		absorb_flag = self.absorb_flag
 		direction = self.direction
-	
-		# used to control progress bar (only send signal for an increase)
-		currProgress = 0
-
+  
 		# initial settings
 		t = 0.1				# tolerance for function rooting - this is flexible now it has been divorced from the buffer
 		buffer = 1e-6		# this is the buffer to ensure that an intersection occurs
@@ -801,8 +805,12 @@ class ExampleWorker():
 
 		# init feature counter (for ID's)
 		j = self.noCompleted
-		k = 0
+		# init feature counter to save batches  
+		x = 0
 		totalDivisions = self.totalDivisions
+		# used to control progress bar (only send signal for an increase)
+		currProgress = int((j*1.0) / totalDivisions * 100)
+  		QgsMessageLog.logMessage("Initialised current progress to: " + str(currProgress))
 
 		# check if you've been killed		
 		if self.killed:
@@ -1041,12 +1049,12 @@ class ExampleWorker():
 				
 									# increment feature counters 
 									j+=1
-									k+=1
-						
+									x+=1
+															
 									# commit to PostgreSQL if required
 									if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
 										self.dbConn.commit()
-										k = 0 
+										x = 0 
 									 
 									# update progress bar if required
 									if j // totalDivisions * 100 > currProgress:
@@ -1225,12 +1233,12 @@ class ExampleWorker():
 					
 							# increment feature counters 
 							j+=1
-							k+=1
-						
+							x+=1
+													
 							# commit to PostgreSQL if required
-							if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
-								self.dbConn.commit()
-								k = 0
+							if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
+           							self.dbConn.commit()
+								x = 0
 
 							# update progress bar if required
 							if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1269,12 +1277,12 @@ class ExampleWorker():
 				
 						# increment feature counters 
 						j+=1
-						k+=1
-						
+						x+=1
+												
 						# commit to PostgreSQL if required
-						if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
-							self.dbConn.commit()
-							k = 0
+						if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
+           						self.dbConn.commit()
+							x = 0
 
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1308,19 +1316,19 @@ class ExampleWorker():
 				
 						# write the feature to the Shapefile/PostGIS table
 						if self.outputType == 'PostGIS':
-							self.writeFeature(fet)
+          						self.writeFeature(fet)
 						else:
 							# write the feature to the out file
 							writer.addFeature(fet)
 					
 						# increment feature counters 
 						j+=1
-						k+=1
-						
+						x+=1
+												
 						# commit to PostgreSQL if required
-						if self.outputType == 'PostGIS' and k == self.pgDetails['batch_size']:
-							self.dbConn.commit()
-							k = 0
+						if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
+          						self.dbConn.commit()
+          						x = 0
 
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1339,6 +1347,9 @@ class ExampleWorker():
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 		
+		if self.outputType == 'PostGIS':
+			self.dbConn.commit()
+
 		return j
 
 
