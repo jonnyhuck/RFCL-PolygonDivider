@@ -252,6 +252,25 @@ class CoreWorker(AbstractWorker):
 			QgsMessageLog.logMessage("Could not create PostGIS table. {0} Command text: {1}".format(e, createCmd), level=QgsMessageLog.CRITICAL)
 			raise Exception("Could not create PostGIS table. {0}".format(e))
 
+	# ----------------------------- Complexity Functions -------------------------------- #
+	def getCompactness(geom):
+		return (geom.length()/(3.54 * sqrt(geom.area())))
+		
+	def getNodeCount(geom):
+		if geom is None: return None
+		if geom.type() == QGis.Polygon:
+			count = 0
+			if geom.isMultipart():
+				polygons = geom.asMultiPolygon()
+			else:
+				polygons = [ geom.asPolygon() ]
+			for polygon in polygons:
+				for ring in polygon:
+					count += len(ring)
+			count = count - 1.0
+		return count
+		
+
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
 
 	def work(self):
@@ -289,6 +308,17 @@ class CoreWorker(AbstractWorker):
 		else:
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+		
+		# cycle through features if over node/complexity thresholds and split if required - output to memory/temporary PostGIS layer?
+		for feat in iter:
+			geom = feat.geometry()
+			nodes = self.getNodeCount(feat.geometry())
+			comp = self.getCompactness(feat.geometry())
+			if nodes > self.nodeLimit and comp > self.compLimit:
+				# split polygon
+			
+			totalArea += feat.geometry().area()
+		del iter
 		
 		# how many features / sections will we have (for progress bar)
 		iter = self.layer.getFeatures()
