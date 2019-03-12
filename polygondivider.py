@@ -572,6 +572,9 @@ class CoreWorker(AbstractWorker):
 		
 		# finally, open the resulting file and return it
 		if self.outputType == 'PostGIS':
+			# Drop temporary table
+			self.dropTempTable()
+			
 			uri = QgsDataSourceURI()
 			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
 			tmp = self.pgDetails['table'].split('.')
