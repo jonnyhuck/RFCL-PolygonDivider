@@ -269,6 +269,57 @@ class CoreWorker(AbstractWorker):
 			self.dbConn.close()	
 			QgsMessageLog.logMessage("Could not delete temporary PostGIS table. {0}".format(e), level=QgsMessageLog.CRITICAL)
 			raise Exception("Could not delete temporary PostGIS table. {0}".format(e))
+
+
+	def writeTempFeature(self, feat):
+		sqlValues = []
+		sqlValues.append('ST_GeomFromText(\'{0}\', {1})'.format(feat.geometry().exportToWkt(),self.crs))
+		fields = feat.fields()
+		attributes = feat.attributes()
+		for n in range(len(fields)):
+			if attributes[n] == NULL:
+				sqlValues.append('{0}'.format(attributes[n]))
+			else:
+				if fields[n].type() == 2:
+					if fields[n].typeName() == 'bit':
+						if attributes[n] == 1 or attributes[n] == -1:
+							sqlValues.append('true')
+						elif attributes[n] == 0:
+							sqlValues.append('false')
+						else:				
+							sqlValues.append('NULL')
+					else:
+						sqlValues.append('{0}'.format(attributes[n]))
+				elif fields[n].type() == 4 or fields[n].type() == 6:
+					sqlValues.append('{0}'.format(attributes[n]))
+				elif fields[n].type() == 10:
+					if fields[n].typeName() == 'bool':
+						if attributes[n] == 't':
+							sqlValues.append('true')
+						elif attributes[n] == 'f':
+							sqlValues.append('false')
+						else:
+							sqlValues.append('NULL')
+					else:
+						# insert value handling apostrophes
+						sqlValues.append('\'{0}\''.format(attributes[n].replace(u'\u2019','\'').replace("'","\'\'")))
+				elif fields[n].type() == 14: # date
+					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
+				elif fields[n].type() == 16: # date/time
+					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
+			
+		insertCmd = 'INSERT INTO public.tmp_poly_divider ({0}) VALUES({1})'.format(self.fieldStr, ','.join(sqlValues))
+		
+		try:
+			curs = self.dbConn.cursor()
+			curs.execute(insertCmd)
+			curs.close()
+		except Exception as e:
+			try:
+				curs.close()	
+			except:
+				pass
+			QgsMessageLog.logMessage("Feature could not be written to the temp table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 	#--------------------------------------------------------------------------------- CL #
 
 
