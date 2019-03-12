@@ -314,6 +314,7 @@ class CoreWorker(AbstractWorker):
 			curs = self.dbConn.cursor()
 			curs.execute(insertCmd)
 			curs.close()
+			self.dbConn.commit()
 		except Exception as e:
 			try:
 				curs.close()	
@@ -324,11 +325,14 @@ class CoreWorker(AbstractWorker):
 
 
 	# ----------------------------- Complexity Functions -------------------------------- #
-	def getCompactness(geom):
-		return (geom.length()/(3.54 * sqrt(geom.area())))
-		
-	def getNodeCount(geom):
-		if geom is None: return None
+	def getCompactness(self, geom):
+		if geom.type() == QGis.Polygon:
+			return (geom.length()/(3.54 * sqrt(geom.area())))
+		else:
+			return None
+
+
+	def getNodeCount(self, geom):
 		if geom.type() == QGis.Polygon:
 			count = 0
 			if geom.isMultipart():
@@ -338,9 +342,59 @@ class CoreWorker(AbstractWorker):
 			for polygon in polygons:
 				for ring in polygon:
 					count += len(ring)
+			del polygons
 			count = count - 1.0
-		return count
+			return count
+		else:
+			return None
+
+
+	def getSplitFeature(self, fieldList, feat, geom):
+		# make a feature with the right schema
+		f = QgsFeature()
+		f.setFields(fieldList)
 		
+		# populate inherited attributes
+		attr = feat.attributes()
+		for a in range(len(attr)):
+			f[a] = attr[a]
+		del attr
+		
+		f.setGeometry(geom)
+		
+		return f
+
+
+	def getSplitPolygons(self, geom):
+		if geom.type() == QGis.Polygon:
+			# Calculate extents
+			box = geom.boundingBox()
+			xMin = math.floor(box.xMinimum())
+			yMax = math.ceil(box.yMaximum())
+			
+			noPolysX = int(box.width() // self.splitDistance) + 1
+			noPolysY = int(box.height() // self.splitDistance) + 1
+			
+			polys = []
+			for i in range(noPolysX):
+				for j in range(noPolysY):
+					rect = QgsRectangle(xMin + (i * self.splitDistance), yMax - ((j + 1) * self.splitDistance), xMin + ((i + 1) * self.splitDistance), yMax - ((j + 1) * self.splitDistance))
+					polys.append(QgsGeometry.fromRect(rect)
+					del rect
+			
+			return polys
+		else:
+			return None
+
+
+	def getXYDistance(self, geom):
+		if geom.type() == QGis.Polygon:
+			box = geom.boundingBox()
+			return box.width(), box.height()
+		else:
+			return -1, -1
+	#--------------------------------------------------------------------------------- CL #
+
 
 # ---------------------------------- MAIN FUNCTION ------------------------------------- #
 
@@ -384,7 +438,7 @@ class CoreWorker(AbstractWorker):
 			writer = None
 		else:
 			# CL : create memory layer to split features
-			tmpLayer = QgsVectorLayer("Polygon?{0}".format(layer.crs().authid(), "Temp Polygon Divider", memory)
+			tmpLayer = QgsVectorLayer("Polygon?crs={0}".format(layer.crs().authid()), "Temp Polygon Divider", 'memory')
 			dp = tmpLayer.dataProvider()
 			dp.addAttributes(fieldList)
 			tmpLayer.updateFields()
@@ -393,19 +447,69 @@ class CoreWorker(AbstractWorker):
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 		
-		# cycle through features if over node/complexity thresholds and split if required - output to memory/temporary PostGIS layer?
+		#--- CL : cycle through features if over node/complexity thresholds and split if required - output to memory/temporary PostGIS layer
 		for feat in iter:
 			geom = feat.geometry()
-			nodes = self.getNodeCount(feat.geometry())
-			comp = self.getCompactness(feat.geometry())
-			if nodes > self.nodeLimit and comp > self.compLimit:
-				# split polygon
+			distX, distY = self.getXYDistance(geom)
 			
-			totalArea += feat.geometry().area()
+			# check polygon is large enough to split
+			if distX > self.splitDistance or distY > self.splitDistance:
+				nodes = self.getNodeCount(geom)
+				compactness = self.getCompactness(geom)
+				
+				if nodes > self.noNodes and compactness > self.compactness:
+					# generate split polygons
+					splitPolys = self.getSplitPolygons(geom)
+					splitFeats = []
+					
+					# split feat by split polygons
+					for poly in splitPolys:
+						if geom.intersects(poly):
+							splitGeom = geom.intersection(poly)
+							
+							# if resulting geometry is multipart then disaggregate
+							if splitGeom.isMultipart():
+								polys = splitGeom.asMultiPolygon()
+								for p in polys:
+									splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
+									splitFeats.append(splitFeat)
+							else:
+								splitFeat = self.getSplitFeature(fieldList, feat, g)
+								splitFeats.append(splitFeat)
+					
+					# insert resulting polygons
+					if self.outputType == 'PostGIS':
+						for splitFeat in splitFeats:
+							self.writeTempFeature(splitFeat)
+					else:
+						dp.addFeatures(splitFeats)
+				else:
+					# insert polygon as is
+					if self.outputType == 'PostGIS':
+						self.writeTempFeature(feat)
+					else:
+						dp.addFeatures([feat])
+			else:
+				# insert polygon as is
+				if self.outputType == 'PostGIS':
+					self.writeTempFeature(feat)
+				else:
+					dp.addFeatures([feat])
 		del iter
 		
+		if self.outputType == 'PostGIS':
+			# open temporary table as layer
+			uri = QgsDataSourceURI()
+			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
+			uri.setDataSource('public', 'tmp_poly_divider','geom','')
+			uri.setKeyColumn('id')
+			uri.setWkbType(QgsWKBTypes.Polygon)		
+			uri.setSrid(str(self.crs))
+			tmpLayer = QgsVectorLayer(uri.uri(), 'Temp Polygon Divider', 'postgres')
+		#--- CL
+		
 		# how many features / sections will we have (for progress bar)
-		iter = self.layer.getFeatures()
+		iter = self.tmpLayer.getFeatures()
 		featCount = 0
 		totalArea = 0
 		for feat in iter:
@@ -424,32 +528,36 @@ class CoreWorker(AbstractWorker):
 		# initialise progress counter
 		noCompleted = 0
 
-		# check if you've been killed		
+		# check if you've been killed
 		if self.killed:
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 
 		# filter rows in layer
-		if self.layer.dataProvider().name() == 'ogr':
+		if self.tmpLayer.dataProvider().name() == 'ogr':
 			key_field = 'fid'
 		else:
-			uri = QgsDataSourceURI(self.layer.dataProvider().dataSourceUri())
+			uri = QgsDataSourceURI(self.tmpLayer.dataProvider().dataSourceUri())
 			key_field = uri.keyColumn()
 			if key_field == '':
 				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer must have a integer key column. {0}".format(e))
 			
-			if self.layer.fields()[self.layer.fieldNameIndex(key_field)].type() != 2:
+			if self.tmpLayer.fields()[self.layer.fieldNameIndex(key_field)].type() != 2:
 				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer must have an integer key column")
 		
 		for i in range(noBatches):
+			if self.killed:
+				self.cleanup()
+				raise UserAbortedNotification('USER Killed')
+			
 			batchMin = i * self.chunk_size
 			batchMax = (i + 1) * self.chunk_size
-			filtered = self.layer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
+			filtered = self.tmpLayer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
 			if filtered:
 			# run example worker
-				self.example_worker = ExampleWorker(self, layer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
+				self.example_worker = ExampleWorker(self, tmpLayer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
 				result = self.example_worker.work()
 				if result != None:
 					noCompleted = result
@@ -471,10 +579,10 @@ class CoreWorker(AbstractWorker):
 				uri.setDataSource('public', self.pgDetails['table'],'geom','')
 			else:
 				uri.setDataSource(tmp[0], tmp[1],'geom','')	
-				uri.setKeyColumn('id')
-				uri.setWkbType(QgsWKBTypes.Polygon)		
-				uri.setSrid(str(self.crs))
-				layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
+			uri.setKeyColumn('id')
+			uri.setWkbType(QgsWKBTypes.Polygon)		
+			uri.setSrid(str(self.crs))
+			layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
 		else:
 			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
 		
@@ -1790,6 +1898,7 @@ class PolygonDivider:
 		
 		 return pgDetails
 	
+#--- CL
 
 	def startWorker(self, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction):
 		"""
@@ -1875,9 +1984,9 @@ class PolygonDivider:
 			absorbFlag = self.dlg.chkOffcuts.isChecked()
 			direction = self.dlg.cboCutDir.currentIndex()
 		
-			#--- CL : Check squared splitDistance > targetArea
-			if splitDistance <= sqrt(targetArea):
-				QgsMessageLog.logMessage("Split Distance must be greater than the square root of Target Area.", level=QgsMessageLog.CRITICAL)
+			#--- CL : Check splitDistance > 4 * sqrt(targetArea) so split polygons not too small
+			if splitDistance <= (4 * sqrt(targetArea)):
+				QgsMessageLog.logMessage("Split Distance must be greater than the 4 x square root of Target Area.", level=QgsMessageLog.CRITICAL)
 				raise Exception("Split Distance must be greater than the square root of Target Area.")
 			#--- CL
 			
