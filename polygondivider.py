@@ -44,7 +44,7 @@ from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar, QPushButton
 import resources, os.path, traceback
 import qgis.utils, sys
 from uuid import uuid4
-from math import sqrt
+from math import ceil, floor, sqrt
 from polygondivider_dialog import PolygonDividerDialog
 import psycopg2
 from qgis.core import *		#TODO: Should be more specific here
@@ -369,8 +369,8 @@ class CoreWorker(AbstractWorker):
 		if geom.type() == QGis.Polygon:
 			# Calculate extents
 			box = geom.boundingBox()
-			xMin = math.floor(box.xMinimum())
-			yMax = math.ceil(box.yMaximum())
+			xMin = floor(box.xMinimum())
+			yMax = ceil(box.yMaximum())
 			
 			noPolysX = int(box.width() // self.splitDistance) + 1
 			noPolysY = int(box.height() // self.splitDistance) + 1
@@ -379,7 +379,7 @@ class CoreWorker(AbstractWorker):
 			for i in range(noPolysX):
 				for j in range(noPolysY):
 					rect = QgsRectangle(xMin + (i * self.splitDistance), yMax - ((j + 1) * self.splitDistance), xMin + ((i + 1) * self.splitDistance), yMax - ((j + 1) * self.splitDistance))
-					polys.append(QgsGeometry.fromRect(rect)
+					polys.append(QgsGeometry.fromRect(rect))
 					del rect
 			
 			return polys
@@ -406,7 +406,7 @@ class CoreWorker(AbstractWorker):
 		# setup for progress bar and message
 		self.toggle_show_cancel.emit(True)
 		self.toggle_show_progress.emit(True)
-		self.set_message.emit('Dividing Polygons')
+		self.set_message.emit('Splitting Complex Polygons')
 		
 		# get fields from the input shapefile
 		layer = self.layer
@@ -447,17 +447,31 @@ class CoreWorker(AbstractWorker):
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 		
-		#--- CL : cycle through features if over node/complexity thresholds and split if required - output to memory/temporary PostGIS layer
+		#--- CL : Apply complexity parameters and split input polygons if required
+		iter = layer.getFeatures()
+		
+		# calculate no. of features
+		featCount = 0
+		for feat in iter:
+			featCount += 1
+		
+		# initialise counters for progress bar
+		k = 0
+		currProgress = 0
+		
+		# cycle through features if over node/complexity thresholds and split if required
 		for feat in iter:
 			geom = feat.geometry()
 			distX, distY = self.getXYDistance(geom)
 			
 			# check polygon is large enough to split
 			if distX > self.splitDistance or distY > self.splitDistance:
+				QgsMessageLog.logMessage("Polygon large enough to split.", level=QgsMessageLog.INFO)
 				nodes = self.getNodeCount(geom)
 				compactness = self.getCompactness(geom)
 				
 				if nodes > self.noNodes and compactness > self.compactness:
+					QgsMessageLog.logMessage("Polygon exceeds complexity thresholds.", level=QgsMessageLog.INFO)
 					# generate split polygons
 					splitPolys = self.getSplitPolygons(geom)
 					splitFeats = []
@@ -483,18 +497,27 @@ class CoreWorker(AbstractWorker):
 							self.writeTempFeature(splitFeat)
 					else:
 						dp.addFeatures(splitFeats)
+					QgsMessageLog.logMessage("Polygon split.", level=QgsMessageLog.INFO)
 				else:
 					# insert polygon as is
 					if self.outputType == 'PostGIS':
 						self.writeTempFeature(feat)
 					else:
 						dp.addFeatures([feat])
+					QgsMessageLog.logMessage("Polygon copied.", level=QgsMessageLog.INFO)
 			else:
 				# insert polygon as is
 				if self.outputType == 'PostGIS':
 					self.writeTempFeature(feat)
 				else:
 					dp.addFeatures([feat])
+				QgsMessageLog.logMessage("Polygon copied.", level=QgsMessageLog.INFO)
+			
+			k += 1
+			QgsMessageLog.logMessage("k = {0}".format(str(k)), level=QgsMessageLog.INFO)
+			if k // featCount * 100 > currProgress:
+				currProgress = int(k // featCount * 100)
+				self.progress.emit(k // featCount * 100)
 		del iter
 		
 		if self.outputType == 'PostGIS':
@@ -508,8 +531,12 @@ class CoreWorker(AbstractWorker):
 			tmpLayer = QgsVectorLayer(uri.uri(), 'Temp Polygon Divider', 'postgres')
 		#--- CL
 		
+		#--- CL : Update message / reset progress bar
+		self.set_message.emit('Dividing Polygons')
+		self.progress.emit(0)
+		
 		# how many features / sections will we have (for progress bar)
-		iter = self.tmpLayer.getFeatures()
+		iter = tmpLayer.getFeatures()
 		featCount = 0
 		totalArea = 0
 		for feat in iter:
@@ -534,18 +561,18 @@ class CoreWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 
 		# filter rows in layer
-		if self.tmpLayer.dataProvider().name() == 'ogr':
+		if tmpLayer.dataProvider().name() == 'ogr' or tmpLayer.dataProvider().name() == 'memory':
 			key_field = 'fid'
 		else:
-			uri = QgsDataSourceURI(self.tmpLayer.dataProvider().dataSourceUri())
+			uri = QgsDataSourceURI(tmpLayer.dataProvider().dataSourceUri())
 			key_field = uri.keyColumn()
 			if key_field == '':
-				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
-				raise Exception("Layer must have a integer key column. {0}".format(e))
+				QgsMessageLog.logMessage("Layer must have an integer key column.", level=QgsMessageLog.CRITICAL)
+				raise Exception("Layer must have an integer key column.")
 			
-			if self.tmpLayer.fields()[self.layer.fieldNameIndex(key_field)].type() != 2:
-				QgsMessageLog.logMessage("Layer must have a integer key column", level=QgsMessageLog.CRITICAL)
-				raise Exception("Layer must have an integer key column")
+			if tmpLayer.fields()[self.layer.fieldNameIndex(key_field)].type() != 2:
+				QgsMessageLog.logMessage("Layer must have a integer key column.", level=QgsMessageLog.CRITICAL)
+				raise Exception("Layer must have an integer key column.")
 		
 		for i in range(noBatches):
 			if self.killed:
@@ -554,7 +581,7 @@ class CoreWorker(AbstractWorker):
 			
 			batchMin = i * self.chunk_size
 			batchMax = (i + 1) * self.chunk_size
-			filtered = self.tmpLayer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
+			filtered = tmpLayer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
 			if filtered:
 			# run example worker
 				self.example_worker = ExampleWorker(self, tmpLayer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
@@ -587,7 +614,7 @@ class CoreWorker(AbstractWorker):
 			uri.setSrid(str(self.crs))
 			layer = QgsVectorLayer(uri.uri(), 'Divided Polygon', 'postgres')
 		else:
-			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+			layer = QgsVectorLayer(self.outFilePath, 'Divided Polygon', 'ogr')
 		
 		if layer.isValid():
 			return layer
@@ -608,7 +635,10 @@ class CoreWorker(AbstractWorker):
 			self.example_worker.dbConn.close() 
 		except:
 			pass
-		self.example_worker.killed = True
+		try:
+			self.example_worker.killed = True
+		except:
+			pass
 		self.set_message.emit('Aborting...')
 		self.toggle_show_progress.emit(False)
 
@@ -1035,7 +1065,7 @@ class ExampleWorker():
 		totalDivisions = self.totalDivisions
 		# used to control progress bar (only send signal for an increase)
 		currProgress = int((j*1.0) / totalDivisions * 100)
-  		QgsMessageLog.logMessage("Initialised current progress to: " + str(currProgress))
+		QgsMessageLog.logMessage("Initialised current progress to: " + str(currProgress))
 
 		# check if you've been killed		
 		if self.killed:
@@ -1903,7 +1933,7 @@ class PolygonDivider:
 	
 #--- CL
 
-	def startWorker(self, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction):
+	def startWorker(self, inLayer, outputType, outFilePath, pgDetails, chunkSize, noNodes, compactness, splitDistance, targetArea, absorbFlag, direction):
 		"""
 		* JJH: Run the polygon division in a thread, feed back to progress bar
 		"""
@@ -1979,7 +2009,7 @@ class PolygonDivider:
 			chunkSize = int(self.dlg.chunkSize.text())
 			#--- CL : Get Complexity settings
 			noNodes = int(self.dlg.nodes.text())
-			compactness = float(self.dlg.compactness.text()
+			compactness = float(self.dlg.compactness.text())
 			splitDistance = int(self.dlg.splitDistance.text())
 			#--- CL
 			
