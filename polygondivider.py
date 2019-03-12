@@ -122,7 +122,7 @@ class CoreWorker(AbstractWorker):
 	# add additional signal to say batch finished and trigger new batch
 	batch_finished = QtCore.pyqtSignal(bool)
 	
-	def __init__(self, iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction):
+	def __init__(self, iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, noNodes, compactness, splitDistance, targetArea, absorbFlag, direction):
 		"""
 		* Initialise Thread
 		"""
@@ -136,6 +136,9 @@ class CoreWorker(AbstractWorker):
 		self.outputType = outputType
 		self.outFilePath = outFilePath
 		self.pgDetails = pgDetails
+		self.noNodes = noNodes
+		self.compactness = compactness
+		self.splitDistance = splitDistance
 		self.chunk_size = chunkSize
 		self.target_area = targetArea
 		self.absorb_flag = absorbFlag
@@ -723,7 +726,7 @@ class ExampleWorker():
 		# return the difference between the resulting polygon area (right of the line) and the desired area
 		return self.getSliceArea(sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward) - targetArea
 
-	#------------------------- Additional PostGIS methods -------------------------------#
+	#------------------------- Additional PostGIS methods ------------------------------ CL#
 	def createDBConnection(self):
 		# create DB connection - fail if connection details invalid
 		try:
@@ -1712,7 +1715,7 @@ class PolygonDivider:
 		* JJH: Run the polygon division in a thread, feed back to progress bar
 		"""
 		
-		worker = CoreWorker(self.iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction)
+		worker = CoreWorker(self.iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, noNodes, compactness, splitDistance, targetArea, absorbFlag, direction)
 		start_worker(worker, self.iface, 'Running the worker')
 		
 
@@ -1774,17 +1777,30 @@ class PolygonDivider:
 				pgDetails['table'] = self.dlg.pgTable.text()
 				if pgDetails['table'] == '':
 					QgsMessageLog.logMessage("PostgreSQL connection or table not specified.", level=QgsMessageLog.CRITICAL)
-					raise Exception("PostgreSQL connection or table not specified")
+					raise Exception("PostgreSQL connection or table not specified.")
 				try:
 					pgDetails['batch_size'] = int(self.dlg.batchSize.text())
 				except:
 					pgDetails['batch_size'] = 10
+			#--- CL : Get processing batch size
 			chunkSize = int(self.dlg.chunkSize.text())
+			#--- CL : Get Complexity settings
+			noNodes = int(self.dlg.nodes.text())
+			compactness = float(self.dlg.compactness.text()
+			splitDistance = int(self.dlg.splitDistance.text())
+			#--- CL
+			
 			targetArea = float(self.dlg.targetArea.text())
 			absorbFlag = self.dlg.chkOffcuts.isChecked()
 			direction = self.dlg.cboCutDir.currentIndex()
 		
+			#--- CL : Check squared splitDistance > targetArea
+			if splitDistance <= sqrt(targetArea):
+				QgsMessageLog.logMessage("Split Distance must be greater than the square root of Target Area.", level=QgsMessageLog.CRITICAL)
+				raise Exception("Split Distance must be greater than the square root of Target Area.")
+			#--- CL
+			
 			# run the tool
-			self.startWorker(inLayer, outputType, outFilePath, pgDetails, chunkSize, targetArea, absorbFlag, direction)
+			self.startWorker(inLayer, outputType, outFilePath, pgDetails, chunkSize, noNodes, compactness, splitDistance, targetArea, absorbFlag, direction)
 
 			#--------------------------------------------------------------JJH
