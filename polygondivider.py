@@ -119,9 +119,7 @@ class CoreWorker(AbstractWorker):
 	* Core worker thread - created by Exegesis SDM to process in batches
 	"""
 
-	# add additional signal to say batch finished and trigger new batch
-	batch_finished = QtCore.pyqtSignal(bool)
-	
+
 	def __init__(self, iface, inLayer, outputType, outFilePath, pgDetails, chunkSize, noNodes, compactness, splitDistance, targetArea, absorbFlag, direction):
 		"""
 		* Initialise Thread
@@ -144,7 +142,7 @@ class CoreWorker(AbstractWorker):
 		self.absorb_flag = absorbFlag
 		self.direction = direction
 
-	#------------------------- Additional PostGIS methods -------------------------------#
+	#------------------------- Additional PostGIS methods ------------------------------ #
 	def createDBConnection(self):
 		# create DB connection - fail if connection details invalid
 		try:
@@ -159,31 +157,36 @@ class CoreWorker(AbstractWorker):
 			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
 
 
-	def createTable(self, layer, fieldList):
+	def createTable(self, layer, fieldList, temp = False):
 		# create new PostGIS table to write the results to
 		dp = layer.dataProvider()
-		tmp = self.pgDetails['table'].split('.')
-		
-		# add double quotes if schema/table in upper case
-		if len(tmp) == 1:
+		if temp:
 			schema = 'public'
-			lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())			
-			if lowerCase:
-				table = self.pgDetails['table']
-			else:
-				table = '"{0}"'.format(self.pgDetails['table'])
-		else:		
-			lowerCase = (tmp[0] == tmp[0].lower())			
-			if lowerCase:
-				schema = tmp[0]
-			else:
-				schema = '"{0}"'.format(tmp[0])
+			table = 'tmp_poly_divider'
+		else:
+			tmp = self.pgDetails['table'].split('.')
+		
+			# add double quotes if schema/table in upper case
+			if len(tmp) == 1:
+				schema = 'public'
+				lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())			
+				if lowerCase:
+					table = self.pgDetails['table']
+				else:
+					table = '"{0}"'.format(self.pgDetails['table'])
+			else:		
+				lowerCase = (tmp[0] == tmp[0].lower())			
+				if lowerCase:
+					schema = tmp[0]
+				else:
+					schema = '"{0}"'.format(tmp[0])
 			
-			lowerCase = (tmp[1] == tmp[1].lower())			
-			if lowerCase:
-				table = tmp[1]
-			else:
-				table = '"{0}"'.format(tmp[1])
+				lowerCase = (tmp[1] == tmp[1].lower())			
+				if lowerCase:
+					table = tmp[1]
+				else:
+					table = '"{0}"'.format(tmp[1])
+		
 		
 		# build SQL command and field name string
 		sqlCmd = []
@@ -255,6 +258,20 @@ class CoreWorker(AbstractWorker):
 			QgsMessageLog.logMessage("Could not create PostGIS table. {0} Command text: {1}".format(e, createCmd), level=QgsMessageLog.CRITICAL)
 			raise Exception("Could not create PostGIS table. {0}".format(e))
 
+
+	def dropTempTable(self):
+		try:
+			curs = self.dbConn.cursor()
+			curs.execute("DROP TABLE IF EXISTS public.tmp_poly_divider")
+			curs.close()
+			self.dbConn.commit()
+		except Exception as e:
+			self.dbConn.close()	
+			QgsMessageLog.logMessage("Could not delete temporary PostGIS table. {0}".format(e), level=QgsMessageLog.CRITICAL)
+			raise Exception("Could not delete temporary PostGIS table. {0}".format(e))
+	#--------------------------------------------------------------------------------- CL #
+
+
 	# ----------------------------- Complexity Functions -------------------------------- #
 	def getCompactness(geom):
 		return (geom.length()/(3.54 * sqrt(geom.area())))
@@ -305,10 +322,23 @@ class CoreWorker(AbstractWorker):
 		if self.outputType == 'PostGIS':
 			self.createDBConnection()
 			self.crs = layer.crs().postgisSrid()
+			
+			#--- CL : create temporary PostGIS table to split features
+			self.dropTempTable()
+			self.createTable(layer, fieldList, temp = True)
+			#--- CL
+			
 			self.createTable(layer, fieldList)
 			self.dbConn.close()
 			writer = None
 		else:
+			# CL : create memory layer to split features
+			tmpLayer = QgsVectorLayer("Polygon?{0}".format(layer.crs().authid(), "Temp Polygon Divider", memory)
+			dp = tmpLayer.dataProvider()
+			dp.addAttributes(fieldList)
+			tmpLayer.updateFields()
+			#--- CL
+			
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 		
