@@ -446,6 +446,14 @@ class CoreWorker(AbstractWorker):
 			tmpLayer.updateFields()
 			#--- CL
 			
+			# check shapefile is not open in map, otherwise remove layer
+			mapLayers = QgsMapLayerRegistry.instance().mapLayers().values()
+			for mapLayer in mapLayers:
+				if mapLayer.dataProvider().name() == 'ogr':
+					if self.outFilePath in mapLayer.dataProvider().dataSourceUri():
+						QgsMapLayerRegistry.instance().removeMapLayer(mapLayer)
+			del mapLayers
+			
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 			del writer
@@ -1075,6 +1083,7 @@ class ExampleWorker():
 		else:
 			# open shapefile for output
 			shpLayer = QgsVectorLayer(self.outFilePath, 'Output Layer', 'ogr')
+			QgsMapLayerRegistry.instance().addMapLayer(shpLayer, addToLegend=False)
 			shpLayer.startEditing()
 
 		# define this to ensure that it's global
@@ -1091,6 +1100,7 @@ class ExampleWorker():
 		# check if you've been killed		
 		if self.killed:
 			shpLayer.rollback()
+			QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 
@@ -1623,6 +1633,7 @@ class ExampleWorker():
 		
 		if self.killed:
 			shpLayer.rollback()
+			QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 		
@@ -1631,6 +1642,7 @@ class ExampleWorker():
 		else:
 			shpLayer.updateExtents()
 			shpLayer.commitChanges()
+			QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 
 		return j
 
