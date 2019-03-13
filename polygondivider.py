@@ -378,7 +378,10 @@ class CoreWorker(AbstractWorker):
 			polys = []
 			for i in range(noPolysX):
 				for j in range(noPolysY):
-					rect = QgsRectangle(xMin + (i * self.splitDistance), yMax - ((j + 1) * self.splitDistance), xMin + ((i + 1) * self.splitDistance), yMax - ((j + 1) * self.splitDistance))
+					rect = QgsRectangle(xMin + (i * self.splitDistance), 
+										yMax - ((j + 1) * self.splitDistance), 
+										xMin + ((i + 1) * self.splitDistance), 
+										yMax - ((j) * self.splitDistance))
 					polys.append(QgsGeometry.fromRect(rect))
 					del rect
 			
@@ -448,30 +451,29 @@ class CoreWorker(AbstractWorker):
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 		
 		#--- CL : Apply complexity parameters and split input polygons if required
-		iter = layer.getFeatures()
-		
 		# calculate no. of features
+		iter = layer.getFeatures()
 		featCount = 0
 		for feat in iter:
 			featCount += 1
+		del iter
 		
 		# initialise counters for progress bar
 		k = 0
 		currProgress = 0
 		
 		# cycle through features if over node/complexity thresholds and split if required
+		iter = layer.getFeatures()
 		for feat in iter:
 			geom = feat.geometry()
 			distX, distY = self.getXYDistance(geom)
 			
 			# check polygon is large enough to split
 			if distX > self.splitDistance or distY > self.splitDistance:
-				QgsMessageLog.logMessage("Polygon large enough to split.", level=QgsMessageLog.INFO)
 				nodes = self.getNodeCount(geom)
 				compactness = self.getCompactness(geom)
 				
 				if nodes > self.noNodes and compactness > self.compactness:
-					QgsMessageLog.logMessage("Polygon exceeds complexity thresholds.", level=QgsMessageLog.INFO)
 					# generate split polygons
 					splitPolys = self.getSplitPolygons(geom)
 					splitFeats = []
@@ -487,9 +489,16 @@ class CoreWorker(AbstractWorker):
 								for p in polys:
 									splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
 									splitFeats.append(splitFeat)
+									del splitFeat
+								del p
+								del polys
 							else:
-								splitFeat = self.getSplitFeature(fieldList, feat, g)
+								splitFeat = self.getSplitFeature(fieldList, feat, splitGeom)
 								splitFeats.append(splitFeat)
+								del splitFeat
+							del splitGeom
+					del poly
+					del splitPolys
 					
 					# insert resulting polygons
 					if self.outputType == 'PostGIS':
@@ -497,27 +506,33 @@ class CoreWorker(AbstractWorker):
 							self.writeTempFeature(splitFeat)
 					else:
 						dp.addFeatures(splitFeats)
-					QgsMessageLog.logMessage("Polygon split.", level=QgsMessageLog.INFO)
+					del splitFeats
 				else:
 					# insert polygon as is
 					if self.outputType == 'PostGIS':
 						self.writeTempFeature(feat)
 					else:
 						dp.addFeatures([feat])
-					QgsMessageLog.logMessage("Polygon copied.", level=QgsMessageLog.INFO)
+				
+				del nodes
+				del compactness
 			else:
 				# insert polygon as is
 				if self.outputType == 'PostGIS':
 					self.writeTempFeature(feat)
 				else:
 					dp.addFeatures([feat])
-				QgsMessageLog.logMessage("Polygon copied.", level=QgsMessageLog.INFO)
+			
+			del distX
+			del distY
 			
 			k += 1
-			QgsMessageLog.logMessage("k = {0}".format(str(k)), level=QgsMessageLog.INFO)
-			if k // featCount * 100 > currProgress:
-				currProgress = int(k // featCount * 100)
-				self.progress.emit(k // featCount * 100)
+			if int(float(k) / featCount * 100) > currProgress:
+				currProgress = int(float(k) / featCount * 100)
+				self.progress.emit(currProgress)
+		del k
+		del currProgress
+		del feat
 		del iter
 		
 		if self.outputType == 'PostGIS':
@@ -529,6 +544,7 @@ class CoreWorker(AbstractWorker):
 			uri.setWkbType(QgsWKBTypes.Polygon)		
 			uri.setSrid(str(self.crs))
 			tmpLayer = QgsVectorLayer(uri.uri(), 'Temp Polygon Divider', 'postgres')
+			del uri
 		#--- CL
 		
 		#--- CL : Update message / reset progress bar
@@ -549,7 +565,7 @@ class CoreWorker(AbstractWorker):
 			self.chunk_size = 50
 		
 		# calculate no. of batches / progress bar divisions
-		noBatches = featCount // self.chunk_size
+		noBatches = featCount // self.chunk_size + 1
 		totalDivisions = totalArea // self.target_area
 		
 		# initialise progress counter
@@ -561,8 +577,10 @@ class CoreWorker(AbstractWorker):
 			raise UserAbortedNotification('USER Killed')
 
 		# filter rows in layer
-		if tmpLayer.dataProvider().name() == 'ogr' or tmpLayer.dataProvider().name() == 'memory':
+		if tmpLayer.dataProvider().name() == 'ogr':
 			key_field = 'fid'
+		elif tmpLayer.dataProvider().name() == 'memory':
+			key_field = '$id'
 		else:
 			uri = QgsDataSourceURI(tmpLayer.dataProvider().dataSourceUri())
 			key_field = uri.keyColumn()
@@ -1312,8 +1330,9 @@ class ExampleWorker():
 										x = 0 
 									 
 									# update progress bar if required
-									if j // totalDivisions * 100 > currProgress:
-										self.parent.progress.emit(j // totalDivisions * 100)
+									if int((j*1.0) / totalDivisions * 100) > currProgress:
+										currProgress = int((j*1.0) / totalDivisions * 100)
+										self.parent.progress.emit(currProgress)
 							
 									# log that there was a problem
 									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset.", level=QgsMessageLog.WARNING)
