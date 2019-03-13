@@ -438,7 +438,6 @@ class CoreWorker(AbstractWorker):
 			
 			self.createTable(layer, fieldList)
 			self.dbConn.close()
-			writer = None
 		else:
 			# CL : create memory layer to split features
 			tmpLayer = QgsVectorLayer("Polygon?crs={0}".format(layer.crs().authid()), "Temp Polygon Divider", 'memory')
@@ -449,6 +448,7 @@ class CoreWorker(AbstractWorker):
 			
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+			del writer
 		
 		#--- CL : Apply complexity parameters and split input polygons if required
 		# calculate no. of features
@@ -602,7 +602,7 @@ class CoreWorker(AbstractWorker):
 			filtered = tmpLayer.setSubsetString('{0} > {1} AND {0} <= {2}'.format(key_field, batchMin, batchMax))
 			if filtered:
 			# run example worker
-				self.example_worker = ExampleWorker(self, tmpLayer, fieldList, self.outputType, writer, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
+				self.example_worker = ExampleWorker(self, tmpLayer, fieldList, self.outputType, self.outFilePath, self.pgDetails, self.target_area, self.absorb_flag, self.direction, totalDivisions, noCompleted)
 				result = self.example_worker.work()
 				if result != None:
 					noCompleted = result
@@ -662,14 +662,14 @@ class CoreWorker(AbstractWorker):
 
 
 class ExampleWorker():
-	def __init__(self, parent, inLayer, fieldList, outputType, writer, pgDetails, targetArea, absorbFlag, direction, totalDivisions, noCompleted):
+	def __init__(self, parent, inLayer, fieldList, outputType, outFilePath, pgDetails, targetArea, absorbFlag, direction, totalDivisions, noCompleted):
 
 		# import args
 		self.parent = parent
 		self.layer = inLayer
 		self.fieldList = fieldList
 		self.outputType = outputType
-		self.writer = writer
+		self.outFilePath = outFilePath
 		self.pgDetails = pgDetails
 		self.target_area = targetArea
 		self.absorb_flag = absorbFlag
@@ -1071,7 +1071,11 @@ class ExampleWorker():
 
 		if self.outputType == 'PostGIS':
 			self.createDBConnection()
-			self.crs = layer.crs().postgisSrid()              
+			self.crs = layer.crs().postgisSrid()
+		else:
+			# open shapefile for output
+			shpLayer = QgsVectorLayer(self.outFilePath, 'Output Layer', 'ogr')
+			shpLayer.startEditing()
 
 		# define this to ensure that it's global
 		subfeatures = []
@@ -1083,10 +1087,10 @@ class ExampleWorker():
 		totalDivisions = self.totalDivisions
 		# used to control progress bar (only send signal for an increase)
 		currProgress = int((j*1.0) / totalDivisions * 100)
-		QgsMessageLog.logMessage("Initialised current progress to: " + str(currProgress))
 
 		# check if you've been killed		
 		if self.killed:
+			shpLayer.rollback()
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 
@@ -1318,7 +1322,7 @@ class ExampleWorker():
 										self.writeFeature(fet)
 									else:
 										# write the feature to the out file
-										writer.addFeature(fet)
+										shpLayer.addFeatures([fet])
 				
 									# increment feature counters 
 									j+=1
@@ -1503,7 +1507,7 @@ class ExampleWorker():
 								self.writeFeature(fet)
 							else:
 								# write the feature to the out file
-								writer.addFeature(fet)
+								shpLayer.addFeatures([fet])
 					
 							# increment feature counters 
 							j+=1
@@ -1547,7 +1551,7 @@ class ExampleWorker():
 							self.writeFeature(fet)
 						else:
 							# write the feature to the out file
-							writer.addFeature(fet)
+							shpLayer.addFeatures([fet])
 				
 						# increment feature counters 
 						j+=1
@@ -1593,7 +1597,7 @@ class ExampleWorker():
           						self.writeFeature(fet)
 						else:
 							# write the feature to the out file
-							writer.addFeature(fet)
+							shpLayer.addFeatures([fet])
 					
 						# increment feature counters 
 						j+=1
@@ -1618,11 +1622,15 @@ class ExampleWorker():
 				raise Exception("Whoops! That dataset isn't polygons!")
 		
 		if self.killed:
+			shpLayer.rollback()
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 		
 		if self.outputType == 'PostGIS':
 			self.dbConn.commit()
+		else:
+			shpLayer.updateExtents()
+			shpLayer.commitChanges()
 
 		return j
 
