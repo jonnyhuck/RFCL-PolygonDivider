@@ -614,7 +614,7 @@ class CoreWorker(AbstractWorker):
 				result = self.example_worker.work()
 				if result != None:
 					noCompleted = result
-					QgsMessageLog.logMessage("Batch {0} of {1} completed. Total polygons: {2}".format(str(i), str(noBatches), str(noCompleted)))
+					QgsMessageLog.logMessage("Batch {0} of {1} completed. Total polygons: {2}".format(str(i + 1), str(noBatches), str(noCompleted)))
 			else:
 				QgsMessageLog.logMessage("Layer could not be filtered.", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer could not be filtered.")
