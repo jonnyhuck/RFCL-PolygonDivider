@@ -271,14 +271,14 @@ class CoreWorker(AbstractWorker):
 			raise Exception("Could not delete temporary PostGIS table. {0}".format(e))
 
 
-	def writeTempFeature(self, feat):
+	def writeTempFeature(self, feat, noFields):
 		sqlValues = []
 		sqlValues.append('ST_GeomFromText(\'{0}\', {1})'.format(feat.geometry().exportToWkt(),self.crs))
 		fields = feat.fields()
 		attributes = feat.attributes()
 		for n in range(len(fields)):
 			if attributes[n] == NULL:
-				sqlValues.append('{0}'.format(attributes[n]))
+				sqlValues.append('NULL')
 			else:
 				if fields[n].type() == 2:
 					if fields[n].typeName() == 'bit':
@@ -307,7 +307,12 @@ class CoreWorker(AbstractWorker):
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
 				elif fields[n].type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
-			
+		
+		# add nulls for new columns
+		extraFields = noFields - len(fields)
+		for n in range(extraFields):
+			sqlValues.append('NULL')
+		
 		insertCmd = 'INSERT INTO public.tmp_poly_divider ({0}) VALUES({1})'.format(self.fieldStr, ','.join(sqlValues))
 		
 		try:
@@ -437,7 +442,6 @@ class CoreWorker(AbstractWorker):
 			#--- CL
 			
 			self.createTable(layer, fieldList)
-			self.dbConn.close()
 		else:
 			# CL : create memory layer to split features
 			tmpLayer = QgsVectorLayer("Polygon?crs={0}".format(layer.crs().authid()), "Temp Polygon Divider", 'memory')
@@ -511,14 +515,14 @@ class CoreWorker(AbstractWorker):
 					# insert resulting polygons
 					if self.outputType == 'PostGIS':
 						for splitFeat in splitFeats:
-							self.writeTempFeature(splitFeat)
+							self.writeTempFeature(splitFeat, len(fieldList))
 					else:
 						dp.addFeatures(splitFeats)
 					del splitFeats
 				else:
 					# insert polygon as is
 					if self.outputType == 'PostGIS':
-						self.writeTempFeature(feat)
+						self.writeTempFeature(feat, len(fieldList))
 					else:
 						dp.addFeatures([feat])
 				
@@ -527,7 +531,7 @@ class CoreWorker(AbstractWorker):
 			else:
 				# insert polygon as is
 				if self.outputType == 'PostGIS':
-					self.writeTempFeature(feat)
+					self.writeTempFeature(feat, len(fieldList))
 				else:
 					dp.addFeatures([feat])
 			
@@ -544,6 +548,8 @@ class CoreWorker(AbstractWorker):
 		del iter
 		
 		if self.outputType == 'PostGIS':
+			self.dbConn.close()
+			
 			# open temporary table as layer
 			uri = QgsDataSourceURI()
 			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
@@ -996,7 +1002,7 @@ class ExampleWorker():
 		attributes = feat.attributes()
 		for n in range(len(fields)):
 			if attributes[n] == NULL:
-				sqlValues.append('{0}'.format(attributes[n]))
+				sqlValues.append('NULL')
 			else:
 				if fields[n].type() == 2:
 					if fields[n].typeName() == 'bit':
@@ -1080,6 +1086,7 @@ class ExampleWorker():
 		if self.outputType == 'PostGIS':
 			self.createDBConnection()
 			self.crs = layer.crs().postgisSrid()
+			shpLayer = None
 		else:
 			# open shapefile for output
 			shpLayer = QgsVectorLayer(self.outFilePath, 'Output Layer', 'ogr')
@@ -1099,8 +1106,9 @@ class ExampleWorker():
 
 		# check if you've been killed		
 		if self.killed:
-			shpLayer.rollback()
-			QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
+			if not shpLayer == None:
+				shpLayer.rollback()
+				QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 
@@ -1117,6 +1125,9 @@ class ExampleWorker():
 
 				# get the attributes to write out
 				currAttributes = feat.attributes()
+				if outputType == 'PostGIS':
+					# delete id attribute
+					del currAttributes[0]
 
 				# extract the geometry and sort out self intersections etc. with a buffer of 0m
 				bufferedPolygon = feat.geometry().buffer(0, 15)
@@ -1632,8 +1643,9 @@ class ExampleWorker():
 				raise Exception("Whoops! That dataset isn't polygons!")
 		
 		if self.killed:
-			shpLayer.rollback()
-			QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
+			if not shpLayer == None:
+				shpLayer.rollback()
+				QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
 			raise UserAbortedNotification('USER Killed')
 		
