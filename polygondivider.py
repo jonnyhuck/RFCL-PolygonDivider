@@ -41,7 +41,7 @@
 from PyQt4 import QtCore
 from PyQt4.QtCore import QVariant, QObject, pyqtSignal, QSettings, QTranslator, qVersion, QCoreApplication, Qt, QThread
 from PyQt4.QtGui import QAction, QIcon, QFileDialog, QProgressBar, QPushButton
-import resources, os.path, traceback
+import resources, os.path, os, traceback
 import qgis.utils, sys
 from uuid import uuid4
 from math import ceil, floor, sqrt
@@ -458,6 +458,16 @@ class CoreWorker(AbstractWorker):
 						QgsMapLayerRegistry.instance().removeMapLayer(mapLayer)
 			del mapLayers
 			
+			# try to delete the files, otherwise QgsVectorFileWriter does not create shapefile properly
+			root = self.outFilePath.replace('.shp','')
+			for ext in ['.shp','.shx','.prj','.dbf','.qpj','.cpg']:
+				fileName = '{0}{1}'.format(root,ext)
+				if os.path.exists(fileName):
+					try:
+						os.remove(fileName)
+					except Exception as e:
+						QgsMessageLog.logMessage("{0} could not be deleted. {1}".format(fileName, e), level=QgsMessageLog.CRITICAL)
+						raise Exception("{0} could not be deleted. {1}".format(fileName, e))
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
 			del writer
@@ -640,7 +650,9 @@ class CoreWorker(AbstractWorker):
 		# finally, open the resulting file and return it
 		if self.outputType == 'PostGIS':
 			# Drop temporary table
+			self.createDBConnection()
 			self.dropTempTable()
+			self.dbConn.close()
 			
 			uri = QgsDataSourceURI()
 			uri.setConnection(self.pgDetails['host'], self.pgDetails['port'], self.pgDetails['database'], self.pgDetails['user'], self.pgDetails['password'])
@@ -1039,8 +1051,30 @@ class ExampleWorker():
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
 				elif fields[n].type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
+		tmp = self.pgDetails['table'].split('.')
+		
+		# add double quotes if schema/table in upper case
+		if len(tmp) == 1:
+			schema = 'public'
+			lowerCase = (self.pgDetails['table'] == self.pgDetails['table'].lower())
+			if lowerCase:
+				table = self.pgDetails['table']
+			else:
+				table = '"{0}"'.format(self.pgDetails['table'])
+		else:
+			lowerCase = (tmp[0] == tmp[0].lower())
+			if lowerCase:
+				schema = tmp[0]
+			else:
+				schema = '"{0}"'.format(tmp[0])
 			
-		insertCmd = 'INSERT INTO {0} ({1}) VALUES({2})'.format(self.pgDetails['table'], self.parent.fieldStr, ','.join(sqlValues))
+				lowerCase = (tmp[1] == tmp[1].lower())			
+				if lowerCase:
+					table = tmp[1]
+				else:
+					table = '"{0}"'.format(tmp[1])
+		
+		insertCmd = 'INSERT INTO {0}.{1} ({2}) VALUES({3})'.format(schema, table, self.parent.fieldStr, ','.join(sqlValues))
 		
 		try:
 			curs = self.dbConn.cursor()
@@ -1114,7 +1148,7 @@ class ExampleWorker():
 
 		# check if you've been killed		
 		if self.killed:
-			if not shpLayer == None:
+			if shpLayer is not None:
 				shpLayer.rollback()
 				QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
@@ -1133,7 +1167,7 @@ class ExampleWorker():
 
 				# get the attributes to write out
 				currAttributes = feat.attributes()
-				if outputType == 'PostGIS':
+				if self.outputType == 'PostGIS':
 					# delete id attribute
 					del currAttributes[0]
 
@@ -1389,7 +1423,8 @@ class ExampleWorker():
 							poly, initialSlice, residuals = self.splitPoly(poly, line, horizontal_flag, forward_flag)
 
 							# put the residuals in the list to be processed
-							subfeatures += residuals
+							if len(residuals) > 0:
+								subfeatures += residuals
 
 						# bounds not bigger than sq, so no division necessary, just subdivide this last one directly (nothing will happen if it can't be subdivided)
 						else:
@@ -1506,7 +1541,8 @@ class ExampleWorker():
 							initialSlice, right, residuals = self.splitPoly(initialSlice, sliceLine, sliceHorizontal, forward_flag)
 
 							# put the residuals in the list to be processed
-							subfeatures += residuals
+							if len(residuals) > 0:
+								subfeatures += residuals
 					
 							## WRITE TO SHAPEFILE
 
@@ -1544,7 +1580,7 @@ class ExampleWorker():
 													
 							# commit to PostgreSQL if required
 							if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
-           							self.dbConn.commit()
+								self.dbConn.commit()
 								x = 0
 
 							# update progress bar if required
@@ -1588,7 +1624,7 @@ class ExampleWorker():
 												
 						# commit to PostgreSQL if required
 						if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
-           						self.dbConn.commit()
+							self.dbConn.commit()
 							x = 0
 
 						# update progress bar if required
@@ -1598,7 +1634,7 @@ class ExampleWorker():
 
 					try:
 			
-						## WRITEANY OFFCUT FROM DIVISION TO SHAPEFILE
+						## WRITE ANY OFFCUT FROM DIVISION TO SHAPEFILE
 
 						# make a feature with the right schema
 						fet = QgsFeature()
@@ -1623,7 +1659,7 @@ class ExampleWorker():
 				
 						# write the feature to the Shapefile/PostGIS table
 						if self.outputType == 'PostGIS':
-          						self.writeFeature(fet)
+							self.writeFeature(fet)
 						else:
 							# write the feature to the out file
 							shpLayer.addFeatures([fet])
@@ -1631,11 +1667,11 @@ class ExampleWorker():
 						# increment feature counters 
 						j+=1
 						x+=1
-												
+						
 						# commit to PostgreSQL if required
 						if self.outputType == 'PostGIS' and x == self.pgDetails['batch_size']:
-          						self.dbConn.commit()
-          						x = 0
+							self.dbConn.commit()
+							x = 0
 
 						# update progress bar if required
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
@@ -1651,7 +1687,7 @@ class ExampleWorker():
 				raise Exception("Whoops! That dataset isn't polygons!")
 		
 		if self.killed:
-			if not shpLayer == None:
+			if shpLayer is not None:
 				shpLayer.rollback()
 				QgsMapLayerRegistry.instance().removeMapLayer(shpLayer)
 			self.cleanup()
