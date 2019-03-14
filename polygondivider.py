@@ -477,6 +477,9 @@ class CoreWorker(AbstractWorker):
 		# cycle through features if over node/complexity thresholds and split if required
 		iter = layer.getFeatures()
 		for feat in iter:
+			if self.killed:
+				break
+			
 			geom = feat.geometry()
 			distX, distY = self.getXYDistance(geom)
 			
@@ -492,6 +495,9 @@ class CoreWorker(AbstractWorker):
 					
 					# split feat by split polygons
 					for poly in splitPolys:
+						if self.killed:
+							break
+						
 						if geom.intersects(poly):
 							splitGeom = geom.intersection(poly)
 							
@@ -515,6 +521,8 @@ class CoreWorker(AbstractWorker):
 					# insert resulting polygons
 					if self.outputType == 'PostGIS':
 						for splitFeat in splitFeats:
+							if self.killed:
+								break
 							self.writeTempFeature(splitFeat, len(fieldList))
 					else:
 						dp.addFeatures(splitFeats)
