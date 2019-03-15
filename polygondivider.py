@@ -325,6 +325,7 @@ class CoreWorker(AbstractWorker):
 				curs.close()	
 			except:
 				pass
+			self.dbConn.rollback()
 			QgsMessageLog.logMessage("Feature could not be written to the temp table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 	#--------------------------------------------------------------------------------- CL #
 
@@ -486,6 +487,7 @@ class CoreWorker(AbstractWorker):
 				break
 			
 			geom = feat.geometry()
+			# get X,Y distance from bounds
 			distX, distY = self.getXYDistance(geom)
 			
 			# check polygon is large enough to split
@@ -507,7 +509,6 @@ class CoreWorker(AbstractWorker):
 							splitGeom = geom.intersection(poly)
 							
 							# ensure only polygon intersections are handled
-							QgsMessageLog.logMessage("WKB Type: {0} Multipart: {1}".format(str(splitGeom.wkbType()), str(splitGeom.IsMultipart()), level=QgsMessageLog.INFO)
 							if splitGeom.wkbType() == QGis.WKBPolygon or splitGeom.wkbType() == QGis.WKBMultiPolygon:
 								if splitGeom.isMultipart():
 									# if resulting geometry is multipart then disaggregate
@@ -528,18 +529,54 @@ class CoreWorker(AbstractWorker):
 					else:
 						dp.addFeatures(splitFeats)
 				else:
-					# insert polygon as is
+					# insert existing feature
+					if geom.isMultipart():
+						# check if multipolygon, if so disaggregate
+						splitFeats = []
+						polys = geom.asMultiPolygon()
+						for p in polys:
+							splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
+							splitFeats.append(splitFeat)
+							
+						# insert resulting polygons
+						if self.outputType == 'PostGIS':
+							for splitFeat in splitFeats:
+								if self.killed:
+									break
+								self.writeTempFeature(splitFeat, len(fieldList))
+						else:
+							dp.addFeatures(splitFeats)
+					else:
+						# insert polygon as is
+						if self.outputType == 'PostGIS':
+							self.writeTempFeature(feat, len(fieldList))
+						else:
+							dp.addFeatures([feat])
+				
+			else:
+				# insert existing feature
+				if geom.isMultipart():
+					# check if multipolygon, if so disaggregate
+					splitFeats = []
+					polys = geom.asMultiPolygon()
+					for p in polys:
+						splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
+						splitFeats.append(splitFeat)
+						
+					# insert resulting polygons
+					if self.outputType == 'PostGIS':
+						for splitFeat in splitFeats:
+							if self.killed:
+								break
+							self.writeTempFeature(splitFeat, len(fieldList))
+					else:
+						dp.addFeatures(splitFeats)
+				else:
+					# if polygon, insert as is
 					if self.outputType == 'PostGIS':
 						self.writeTempFeature(feat, len(fieldList))
 					else:
 						dp.addFeatures([feat])
-				
-			else:
-				# insert polygon as is
-				if self.outputType == 'PostGIS':
-					self.writeTempFeature(feat, len(fieldList))
-				else:
-					dp.addFeatures([feat])
 			
 			k += 1
 			if int(float(k) / featCount * 100) > currProgress:
@@ -1079,7 +1116,8 @@ class ExampleWorker():
 				curs.close()
 			except:
 				pass
-			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
+			self.dbConn.rollback()
+			QgsMessageLog.logMessage("Feature could not be written to the output table. Reverted latest batch of PostGIS changes. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 
 #---------------------------------------------------------------------- CL #
 
@@ -1738,7 +1776,7 @@ def start_worker(worker, iface, message, with_progress=True):
 	# start the worker in a new thread
 	# let Qt take ownership of the QThread
 	thread = QThread(iface.mainWindow())
-	worker.moveToThread(thread)
+	#worker.moveToThread(thread)
 	
 	worker.set_message.connect(lambda message: set_worker_message(
 		message, message_bar))
@@ -1760,8 +1798,9 @@ def start_worker(worker, iface, message, with_progress=True):
 	worker.message_bar = message_bar
 	worker.progress_bar = progress_bar
 	thread.started.connect(worker.run)
+	worker.work()
 	
-	thread.start()
+	#thread.start()
 	return thread, message_bar
 
 
