@@ -1776,7 +1776,7 @@ def start_worker(worker, iface, message, with_progress=True):
 	# start the worker in a new thread
 	# let Qt take ownership of the QThread
 	thread = QThread(iface.mainWindow())
-	#worker.moveToThread(thread)
+	worker.moveToThread(thread)
 	
 	worker.set_message.connect(lambda message: set_worker_message(
 		message, message_bar))
@@ -1798,9 +1798,8 @@ def start_worker(worker, iface, message, with_progress=True):
 	worker.message_bar = message_bar
 	worker.progress_bar = progress_bar
 	thread.started.connect(worker.run)
-	worker.work()
 	
-	#thread.start()
+	thread.start()
 	return thread, message_bar
 
 
