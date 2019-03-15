@@ -506,15 +506,16 @@ class CoreWorker(AbstractWorker):
 						if geom.intersects(poly):
 							splitGeom = geom.intersection(poly)
 							
-							# if resulting geometry is multipart then disaggregate
-							if splitGeom.isMultipart():
+							# ensure only polygon intersections are handled
+							if splitGeom.wkbType() == QGis.WKBMultiPolygon:
+								# if resulting geometry is multipart then disaggregate
 								polys = splitGeom.asMultiPolygon()
 								for p in polys:
 									splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
 									splitFeats.append(splitFeat)
-							else:
-								splitFeat = self.getSplitFeature(fieldList, feat, splitGeom)
-								splitFeats.append(splitFeat)
+							elif splitGeom.wkbType() == QGis.WKBPolygon:
+									splitFeat = self.getSplitFeature(fieldList, feat, splitGeom)
+									splitFeats.append(splitFeat)
 					
 					# insert resulting polygons
 					if self.outputType == 'PostGIS':
