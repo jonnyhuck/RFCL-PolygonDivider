@@ -347,7 +347,6 @@ class CoreWorker(AbstractWorker):
 			for polygon in polygons:
 				for ring in polygon:
 					count += len(ring)
-			del polygons
 			count = count - 1.0
 			return count
 		else:
@@ -363,7 +362,6 @@ class CoreWorker(AbstractWorker):
 		attr = feat.attributes()
 		for a in range(len(attr)):
 			f[a] = attr[a]
-		del attr
 		
 		f.setGeometry(geom)
 		
@@ -388,7 +386,6 @@ class CoreWorker(AbstractWorker):
 										xMin + ((i + 1) * self.splitDistance), 
 										yMax - ((j) * self.splitDistance))
 					polys.append(QgsGeometry.fromRect(rect))
-					del rect
 			
 			return polys
 		else:
@@ -456,7 +453,6 @@ class CoreWorker(AbstractWorker):
 				if mapLayer.dataProvider().name() == 'ogr':
 					if self.outFilePath in mapLayer.dataProvider().dataSourceUri():
 						QgsMapLayerRegistry.instance().removeMapLayer(mapLayer)
-			del mapLayers
 			
 			# try to delete the files, otherwise QgsVectorFileWriter does not create shapefile properly
 			root = self.outFilePath.replace('.shp','')
@@ -468,9 +464,9 @@ class CoreWorker(AbstractWorker):
 					except Exception as e:
 						QgsMessageLog.logMessage("{0} could not be deleted. {1}".format(fileName, e), level=QgsMessageLog.CRITICAL)
 						raise Exception("{0} could not be deleted. {1}".format(fileName, e))
+			
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
-			del writer
 		
 		#--- CL : Apply complexity parameters and split input polygons if required
 		# calculate no. of features
@@ -478,7 +474,6 @@ class CoreWorker(AbstractWorker):
 		featCount = 0
 		for feat in iter:
 			featCount += 1
-		del iter
 		
 		# initialise counters for progress bar
 		k = 0
@@ -517,16 +512,9 @@ class CoreWorker(AbstractWorker):
 								for p in polys:
 									splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
 									splitFeats.append(splitFeat)
-									del splitFeat
-								del p
-								del polys
 							else:
 								splitFeat = self.getSplitFeature(fieldList, feat, splitGeom)
 								splitFeats.append(splitFeat)
-								del splitFeat
-							del splitGeom
-					del poly
-					del splitPolys
 					
 					# insert resulting polygons
 					if self.outputType == 'PostGIS':
@@ -536,7 +524,6 @@ class CoreWorker(AbstractWorker):
 							self.writeTempFeature(splitFeat, len(fieldList))
 					else:
 						dp.addFeatures(splitFeats)
-					del splitFeats
 				else:
 					# insert polygon as is
 					if self.outputType == 'PostGIS':
@@ -544,8 +531,6 @@ class CoreWorker(AbstractWorker):
 					else:
 						dp.addFeatures([feat])
 				
-				del nodes
-				del compactness
 			else:
 				# insert polygon as is
 				if self.outputType == 'PostGIS':
@@ -553,17 +538,10 @@ class CoreWorker(AbstractWorker):
 				else:
 					dp.addFeatures([feat])
 			
-			del distX
-			del distY
-			
 			k += 1
 			if int(float(k) / featCount * 100) > currProgress:
 				currProgress = int(float(k) / featCount * 100)
 				self.progress.emit(currProgress)
-		del k
-		del currProgress
-		del feat
-		del iter
 		
 		if self.outputType == 'PostGIS':
 			self.dbConn.close()
@@ -576,7 +554,6 @@ class CoreWorker(AbstractWorker):
 			uri.setWkbType(QgsWKBTypes.Polygon)		
 			uri.setSrid(str(self.crs))
 			tmpLayer = QgsVectorLayer(uri.uri(), 'Temp Polygon Divider', 'postgres')
-			del uri
 		#--- CL
 		
 		#--- CL : Update message / reset progress bar
@@ -590,7 +567,6 @@ class CoreWorker(AbstractWorker):
 		for feat in iter:
 			featCount += 1
 			totalArea += feat.geometry().area()
-		del iter
 		
 		if self.chunk_size < 1:
 			QgsMessageLog.logMessage("Chunk size invalid, defaulting to 50", level=QgsMessageLog.CRITICAL)
@@ -616,6 +592,7 @@ class CoreWorker(AbstractWorker):
 		else:
 			uri = QgsDataSourceURI(tmpLayer.dataProvider().dataSourceUri())
 			key_field = uri.keyColumn()
+			
 			if key_field == '':
 				QgsMessageLog.logMessage("Layer must have an integer key column.", level=QgsMessageLog.CRITICAL)
 				raise Exception("Layer must have an integer key column.")
@@ -865,6 +842,7 @@ class ExampleWorker():
 						if p > maxy:
 							maxy = p
 							maxyi = i
+					
 					left = polys.pop(maxyi)
 	
 					# right is the bottom one
@@ -877,8 +855,9 @@ class ExampleWorker():
 						elif p == miny:		# if there is a tie for which is the rightest, get the rightest in the other dimension
 							if polys[i].boundingBox().xMinimum() < polys[minyi].boundingBox().xMinimum():	# left
 								minyi = i
+		
 					right = polys.pop(minyi)
-	
+					
 				else:	## cutting from the left
 	
 					# left is the rightest one
@@ -888,6 +867,7 @@ class ExampleWorker():
 						if p > maxx:
 							maxx = p
 							maxxi = i
+					
 					left = polys.pop(maxxi)
 	
 					# right is the leftest one
@@ -900,6 +880,7 @@ class ExampleWorker():
 						elif p == minx:		# if there is a tie for which is the rightest, get the rightest in the other dimension
 							if polys[i].boundingBox().yMinimum() < polys[minxi].boundingBox().yMinimum():	# bottom
 								minxi = i
+					
 					right = polys.pop(minxi)
 		
 			else:	### cut from top / right (forward_flag is false)
@@ -913,6 +894,7 @@ class ExampleWorker():
 						if p < miny:
 							miny = p
 							minyi = i
+					
 					left = polys.pop(minyi)
 	
 					# right is the top one
@@ -925,6 +907,7 @@ class ExampleWorker():
 						elif p == maxy:		# if there is a tie for which is the rightest, get the rightest in the other dimension
 							if polys[i].boundingBox().xMaximum() > polys[maxyi].boundingBox().xMaximum():
 								maxyi = i
+					
 					right = polys.pop(maxyi)
 	
 				else:	## cutting from the right
@@ -936,6 +919,7 @@ class ExampleWorker():
 						if p < minx:
 							minx = p
 							minxi = i
+					
 					left = polys.pop(minxi)
 		
 					# right is the rightest one
@@ -948,7 +932,9 @@ class ExampleWorker():
 						elif p == maxx:		# if there is a tie for which is the rightest, get the rightest in the other dimension
 							if polys[i].boundingBox().yMaximum() > polys[maxxi].boundingBox().yMaximum():
 								maxxi = i
+					
 					right = polys.pop(maxxi)
+
 
 			# work out if any remaining polygons are contiguous with left or not
 			contiguous = []
@@ -964,13 +950,14 @@ class ExampleWorker():
 				if len(contiguous) > 0:
 					contiguous += [left]
 					left = QgsGeometry.unaryUnion(contiguous)
-		
+			
 			# return the two sections (left is the potato, right is the chip...), plus any noncontiguous polygons
 			return left, right, noncontiguous
 		else:
 			# log error
 			QgsMessageLog.logMessage("FAIL: Polygon division failed.", level=QgsMessageLog.CRITICAL)
-			
+			return polygon, None, []
+
 
 	def getSliceArea(self,sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
 		"""
@@ -988,7 +975,10 @@ class ExampleWorker():
 		left, right, residual = self.splitPoly(poly, splitter, horizontal, forward)
 	
 		# return the area of the bit you cut off
-		return right.area()
+		if right is not None:
+			return right.area()
+		else:
+			return 0
 
 
 	def f(self,sliceCoord, poly, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
@@ -1051,6 +1041,7 @@ class ExampleWorker():
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd')))
 				elif fields[n].type() == 16: # date/time
 					sqlValues.append('\'{0}\''.format(attributes[n].toString('yyyy-MM-dd hh:mm:ss')))
+		
 		tmp = self.pgDetails['table'].split('.')
 		
 		# add double quotes if schema/table in upper case
@@ -1082,7 +1073,7 @@ class ExampleWorker():
 			curs.close()
 		except Exception as e:
 			try:
-				curs.close()	
+				curs.close()
 			except:
 				pass
 			QgsMessageLog.logMessage("Feature could not be written to the output table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
@@ -1117,7 +1108,7 @@ class ExampleWorker():
 		if (direction == 0 or direction == 2): 
 			forward_flag = True
 		else:
-			forward_flag = False	
+			forward_flag = False
 
 		# this is used to make sure we don't hit an insurmountable error and just repeatedly change direction
 		ERROR_FLAG_0 = False	# tracks if increasing number of subdivisions failed 
@@ -1188,7 +1179,7 @@ class ExampleWorker():
 						subfeatures.append(QgsGeometry().fromPolygon(i))
 				else:
 					# ...OR load the feature into a list of one (it may be extended in the course of splitting if we create noncontiguous offcuts) and loop through it
-					subfeatures.append(bufferedPolygon) 
+					subfeatures.append(bufferedPolygon)
 	
 				#loop through the geometries
 				for poly in subfeatures:
@@ -1212,7 +1203,7 @@ class ExampleWorker():
 					# work out the size of a square with area = targetArea if required
 					sq = sqrt(targetArea)
 
-					# until there is no more dividing to do...						
+					# until there is no more dividing to do...
 					while poly.area() > targetArea + t:
 						# check if you've been killed
 						if self.killed:
@@ -1274,7 +1265,7 @@ class ExampleWorker():
 									# is it a W condition error?
 									if e.value == "Bracket is smaller than tolerance.":
 										# ...increase number of subdivisions and go around again
-										nSubdivisions += 1											
+										nSubdivisions += 1
 										continue
 				
 									# if not a W condition error, just move on
@@ -1283,7 +1274,7 @@ class ExampleWorker():
 										# set flag and stop trying to adjust nSubdivisions
 										ERROR_FLAG_0 = True
 										break
-					
+								
 							# if that didn't work, try decreasing instead of increasing								
 							if ERROR_FLAG_0:
 		
@@ -1318,7 +1309,8 @@ class ExampleWorker():
 										# ...increase number of subdivisions and go around again
 										nSubdivisions -= 1											
 										continue
-		
+								
+								
 							# if increasing the subdivision size didn't help, then start trying shifting directions
 							if ERROR_FLAG_1:
 		
@@ -1437,7 +1429,7 @@ class ExampleWorker():
 							# TODO: verify this doesn't need rounding
 							nSubdivisions = int(initialSlice.area() // targetArea) # shouldn't need rounding...
 							if nSubdivisions == 0:
-								nSubdivisions = 1							
+								nSubdivisions = 1
 
 						#...then divide that into sections of targetArea
 						for k in range(nSubdivisions-1):	# nCuts = nPieces - 1
@@ -1631,6 +1623,7 @@ class ExampleWorker():
 						if int((j*1.0) / totalDivisions * 100) > currProgress:
 							currProgress = int((j*1.0) / totalDivisions * 100)
 							self.parent.progress.emit(currProgress)
+					
 
 					try:
 			
@@ -1681,7 +1674,7 @@ class ExampleWorker():
 					except:
 						# this just means that there is no offcut, which is no problem!
 						pass
-					
+				
 			else:
 				QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", level=QgsMessageLog.CRITICAL)
 				raise Exception("Whoops! That dataset isn't polygons!")
