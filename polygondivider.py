@@ -152,6 +152,7 @@ class CoreWorker(AbstractWorker):
 											host = self.pgDetails['host'],
 											port = self.pgDetails['port'])
 			self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+			self.curs = self.dbConn.cursor()
 		except Exception as e:
 			QgsMessageLog.logMessage("PostGreSQL database connection details invalid. {0}".format(e), level=QgsMessageLog.CRITICAL)
 			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
@@ -249,9 +250,7 @@ class CoreWorker(AbstractWorker):
 		self.fieldStr = ','.join(fieldNames)
 		
 		try:
-			curs = self.dbConn.cursor()
-			curs.execute(createCmd)
-			curs.close() 
+			self.curs.execute(createCmd)
 			self.dbConn.commit()			
 		except Exception as e:
 			self.dbConn.close()	
@@ -261,9 +260,7 @@ class CoreWorker(AbstractWorker):
 
 	def dropTempTable(self):
 		try:
-			curs = self.dbConn.cursor()
-			curs.execute("DROP TABLE IF EXISTS public.tmp_poly_divider")
-			curs.close()
+			self.curs.execute("DROP TABLE IF EXISTS public.tmp_poly_divider")
 			self.dbConn.commit()
 		except Exception as e:
 			self.dbConn.close()	
@@ -316,15 +313,9 @@ class CoreWorker(AbstractWorker):
 		insertCmd = 'INSERT INTO public.tmp_poly_divider ({0}) VALUES({1})'.format(self.fieldStr, ','.join(sqlValues))
 		
 		try:
-			curs = self.dbConn.cursor()
-			curs.execute(insertCmd)
-			curs.close()
+			self.curs.execute(insertCmd)
 			self.dbConn.commit()
 		except Exception as e:
-			try:
-				curs.close()	
-			except:
-				pass
 			self.dbConn.rollback()
 			QgsMessageLog.logMessage("Feature could not be written to the temp table. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 	#--------------------------------------------------------------------------------- CL #
@@ -584,6 +575,7 @@ class CoreWorker(AbstractWorker):
 				self.progress.emit(currProgress)
 		
 		if self.outputType == 'PostGIS':
+			self.curs.close()
 			self.dbConn.close()
 			
 			# open temporary table as layer
@@ -1040,6 +1032,7 @@ class ExampleWorker():
 											host = self.pgDetails['host'],
 											port = self.pgDetails['port'])
 			self.dbConn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+			self.curs = self.dbConn.cursor()
 		except Exception as e:
 			QgsMessageLog.logMessage("PostGreSQL database connection details invalid. {0}".format(e), level=QgsMessageLog.CRITICAL)
 			raise Exception("PostGreSQL database connection details invalid. {0}".format(e))
@@ -1108,14 +1101,8 @@ class ExampleWorker():
 		insertCmd = 'INSERT INTO {0}.{1} ({2}) VALUES({3})'.format(schema, table, self.parent.fieldStr, ','.join(sqlValues))
 		
 		try:
-			curs = self.dbConn.cursor()
-			curs.execute(insertCmd)
-			curs.close()
+			self.curs.execute(insertCmd)
 		except Exception as e:
-			try:
-				curs.close()
-			except:
-				pass
 			self.dbConn.rollback()
 			QgsMessageLog.logMessage("Feature could not be written to the output table. Reverted latest batch of PostGIS changes. {0} Command text: {1}".format(e, insertCmd), level=QgsMessageLog.CRITICAL)
 
@@ -1728,6 +1715,7 @@ class ExampleWorker():
 			raise UserAbortedNotification('USER Killed')
 		
 		if self.outputType == 'PostGIS':
+			self.curs.close()
 			self.dbConn.commit()
 		else:
 			shpLayer.updateExtents()
@@ -1740,6 +1728,7 @@ class ExampleWorker():
 	def cleanup(self):
 #		 print "cleanup here"
 		try:
+			self.curs.close()
 			self.dbConn.close() 
 		except:
 			pass	
