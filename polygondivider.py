@@ -507,13 +507,15 @@ class CoreWorker(AbstractWorker):
 							splitGeom = geom.intersection(poly)
 							
 							# ensure only polygon intersections are handled
-							if splitGeom.wkbType() == QGis.WKBMultiPolygon:
-								# if resulting geometry is multipart then disaggregate
-								polys = splitGeom.asMultiPolygon()
-								for p in polys:
-									splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
-									splitFeats.append(splitFeat)
-							elif splitGeom.wkbType() == QGis.WKBPolygon:
+							QgsMessageLog.logMessage("WKB Type: {0} Multipart: {1}".format(str(splitGeom.wkbType()), str(splitGeom.IsMultipart()), level=QgsMessageLog.INFO)
+							if splitGeom.wkbType() == QGis.WKBPolygon or splitGeom.wkbType() == QGis.WKBMultiPolygon:
+								if splitGeom.isMultipart():
+									# if resulting geometry is multipart then disaggregate
+									polys = splitGeom.asMultiPolygon()
+									for p in polys:
+										splitFeat = self.getSplitFeature(fieldList, feat, QgsGeometry.fromPolygon(p))
+										splitFeats.append(splitFeat)
+								else:
 									splitFeat = self.getSplitFeature(fieldList, feat, splitGeom)
 									splitFeats.append(splitFeat)
 					
