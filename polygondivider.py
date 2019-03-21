@@ -459,6 +459,7 @@ class CoreWorker(AbstractWorker):
 			
 			# create a new shapefile to write the results to
 			writer = QgsVectorFileWriter(self.outFilePath, "CP1250", fieldList, QGis.WKBPolygon, layer.crs(), "ESRI Shapefile")
+			del writer
 		
 		#--- CL : Apply complexity parameters and split input polygons if required
 		# calculate no. of features
@@ -1092,11 +1093,11 @@ class ExampleWorker():
 			else:
 				schema = '"{0}"'.format(tmp[0])
 			
-				lowerCase = (tmp[1] == tmp[1].lower())			
-				if lowerCase:
-					table = tmp[1]
-				else:
-					table = '"{0}"'.format(tmp[1])
+			lowerCase = (tmp[1] == tmp[1].lower())			
+			if lowerCase:
+				table = tmp[1]
+			else:
+				table = '"{0}"'.format(tmp[1])
 		
 		insertCmd = 'INSERT INTO {0}.{1} ({2}) VALUES({3})'.format(schema, table, self.parent.fieldStr, ','.join(sqlValues))
 		
