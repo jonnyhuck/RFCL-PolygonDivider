@@ -44,3 +44,7 @@ A standalone version of this plugin *(i.e. not dependent upon QGIS)* will be ava
 
 #### Acknowledgements:
 The production of this plugin was funded by [Zero Waste Scotland Ltd.](http://www.zerowastescotland.org.uk/). Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post and by the [pyroots](https://pypi.python.org/pypi/pyroots/0.1.0) Python implementations of Brent's method.
+
+#### Python 3 / QGIS 3 port
+
+Alexander Kmoch, Univesity of Tartu, Estonia @LandscapeGeoinformatics
