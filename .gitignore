@@ -100,3 +100,8 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# plugoin build stuff
+zip_build
+__pycache__
+scratchpad.py
