@@ -23,13 +23,15 @@
 
 import os
 
-from PyQt4 import QtGui, uic
+from qgis.PyQt import uic
+from qgis.PyQt import QtWidgets
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'polygondivider_dialog_base.ui'))
 
 
-class PolygonDividerDialog(QtGui.QDialog, FORM_CLASS):
+class PolygonDividerDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         """Constructor."""
         super(PolygonDividerDialog, self).__init__(parent)

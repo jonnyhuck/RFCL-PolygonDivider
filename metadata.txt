@@ -1,35 +1,47 @@
-# This file contains metadata for your plugin. Since 
-# version 2.0 of QGIS this is the proper way to supply 
-# information about a plugin. The old method of 
-# embedding metadata in __init__.py will 
-# is no longer supported since version 2.0.
+# This file contains metadata for your plugin.
 
-# This file should be included when you package your plugin.
-
-# Mandatory items:
+# This file should be included when you package your plugin.# Mandatory items:
 
 [general]
 name=Polygon Divider
-qgisMinimumVersion=2.0
+qgisMinimumVersion=3.0
 description=Divides polygons into smaller 'squareish' polygons of a specified size
-version=0.4
-author=Dr Jonny Huck, Roy Ferguson Consultancy Ltd.
-email=jonnyhuck@gmail.com
-about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on.<br/><br/>Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples.
-tracker=https://github.com/jonnyhuck/RFCL-PolygonDivider/issues
-repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
+version=0.5
+author=Kapildev Adhikari, Dr Jonny Huck
+email=kapildevadk@gmail.com
 
+about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on. Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples.
+
+tracker=http://bugs
+repository=http://repo
+# End of mandatory metadata
 
 # Recommended items:
 
+hasProcessingProvider=no
 # Uncomment the following line and add your changelog:
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=Polygon Division, Polygon Split, Land Parcel
+tags=python
 
-homepage=https://github.com/jonnyhuck/RFCL-PolygonDivider
+homepage=http://homepage
 category=Vector
 icon=icon.png
-experimental=False
+# experimental flag
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just a single version)
 deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+Category of the plugin: Raster, Vector, Database or Web
+# category=
+
+# If the plugin can run on QGIS Server.
+server=False
+
