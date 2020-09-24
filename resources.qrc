@@ -1,5 +1,5 @@
 <RCC>
-    <qresource prefix="/plugins/PolygonDivider" >
+    <qresource prefix="/plugins/polygon_divider" >
         <file>icon.png</file>
     </qresource>
 </RCC>
