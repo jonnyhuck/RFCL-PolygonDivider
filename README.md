@@ -1,6 +1,6 @@
 # ![icon](icon.png) Polygon Divider QGIS Plugin
 
-### Now available for QGIS 3
+### Now available for QGIS 3 (QGIS2 version available in [this branch](https://github.com/jonnyhuck/RFCL-PolygonDivider/tree/QGIS2-version))
 
 **Polygon Divider** is a plugin for [QGIS](http://www.qgis.org/en/site/) that takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on.
 
