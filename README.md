@@ -1,6 +1,6 @@
 # ![icon](icon.png) Polygon Divider QGIS Plugin
 
-### Produced by [Roy Ferguson Consultancy Ltd](https://royferguson.co.uk/) for [Zero Waste Scotland Ltd](http://www.zerowastescotland.org.uk/).
+### Now available for QGIS 3
 
 **Polygon Divider** is a plugin for [QGIS](http://www.qgis.org/en/site/) that takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on.
 
@@ -40,7 +40,5 @@ In cases where the algorithm finds the geometry difficult to divide, it will mak
 
 Please do get in touch with a copy of any polygons that do not work, they will help us continue to improve this plugin!
 
-A standalone version of this plugin *(i.e. not dependent upon QGIS)* will be available shortly.
-
 #### Acknowledgements:
-The production of this plugin was funded by [Zero Waste Scotland Ltd.](http://www.zerowastescotland.org.uk/). Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post and by the [pyroots](https://pypi.python.org/pypi/pyroots/0.1.0) Python implementations of Brent's method.
+The original production of this plugin for QGIS2 was undertaken by Roy Ferguson Consultancy Ltd; funded by [Zero Waste Scotland Ltd](http://www.zerowastescotland.org.uk/). Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post and by the [pyroots](https://pypi.python.org/pypi/pyroots/0.1.0) Python implementations of Brent's method. The version for QGIS3 was produced by [Flying Turtle Ltd](https://flyingturtle.co.uk); funded by [Deutsche Forestservice GMBH](https://www.dfs-online.de/).
