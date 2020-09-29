@@ -295,7 +295,7 @@ class PolygonDividerTask(QgsTask):
 			# if the feature is a multipolygon, explode into separate polygons for individual processing
 			multiGeom = poly.asMultiPolygon()
 			for i in multiGeom:
-				polys.append(QgsGeometry().fromPolygon(i))
+				polys.append(QgsGeometry().fromPolygonXY(i))
 		else:
 			# ...OR load the feature into a list of one (it may be extended in the course of splitting if we create noncontiguous offcuts) and loop through it
 			polys.append(poly)
@@ -558,7 +558,7 @@ class PolygonDividerTask(QgsTask):
 						multiGeom = QgsGeometry()
 						multiGeom = bufferedPolygon.asMultiPolygon()
 						for i in multiGeom:
-							subfeatures.append(QgsGeometry().fromPolygon(i))
+							subfeatures.append(QgsGeometry().fromPolygonXY(i))
 					else:
 						# ...OR load the feature into a list of one (it may be extended in the course of splitting if we create noncontiguous offcuts) and loop through it
 						subfeatures.append(bufferedPolygon)
