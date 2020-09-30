@@ -6,8 +6,8 @@
 name=Polygon Divider
 qgisMinimumVersion=3.0
 description=Divides polygons into smaller 'squareish' polygons of a specified size
-version=0.5
-author=Flying Turtle Ltd
+version=0.6
+author=Jonny Huck, Flying Turtle Ltd
 email=jonny@flyingturtle.co.uk
 
 about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on. <br/> <br/> Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples. <br/> <br/> This was originally developed by Jonny Huck at Roy Ferguson Consulting Ltd. It is now maintained by Jonny Huck at Flying Turtle Ltd.
