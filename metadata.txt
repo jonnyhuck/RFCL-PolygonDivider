@@ -6,7 +6,7 @@
 name=Polygon Divider
 qgisMinimumVersion=3.0
 description=Divides polygons into smaller 'squareish' polygons of a specified size
-version=0.6
+version=0.7
 author=Jonny Huck, Flying Turtle Ltd
 email=jonny@flyingturtle.co.uk
 
