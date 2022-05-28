@@ -472,6 +472,12 @@ class PolygonDividerTask(QgsTask):
 			absorb_flag = self.absorb_flag
 			direction = self.direction
 
+			# validation that the file is projected
+			if layer.crs().isGeographic():
+				QgsMessageLog.logMessage("Whoops! The Polygon Divider requires a projected dataset - please save a copy with a projected CRS and try again.", MESSAGE_CATEGORY, Qgis.Critical)
+				self.exception = Exception("Whoops! The Polygon Divider requires a projected dataset - please save a copy with a projected CRS and try again.")
+				return False
+
 			# used to control progress bar (only send signal for an increase)
 			currProgress = 0
 			self.setProgress(currProgress)
