@@ -509,8 +509,14 @@ class PolygonDividerTask(QgsTask):
 			fieldList.append(QgsField('POINTY', QVariant.Int))
 
 			# create a new shapefile to write the results to
-			# TODO: THIS CONSTRUCTOR IS DEPRECATED
-			writer = QgsVectorFileWriter(outFilePath, "CP1250", fieldList, QgsWkbTypes.Polygon, layer.crs(), "ESRI Shapefile")
+			transform_context = QgsProject.instance().transformContext()
+			save_options = QgsVectorFileWriter.SaveVectorOptions()
+			save_options.driverName = "ESRI Shapefile"
+			save_options.fileEncoding = "UTF-8"
+			writer = QgsVectorFileWriter.create(outFilePath, fieldList, QgsWkbTypes.Polygon, layer.crs(), transform_context, save_options)
+			if writer.hasError() != QgsVectorFileWriter.NoError:
+				QgsMessageLog.logMessage(f"Error when creating shapefile: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
+
 
 			# define this to ensure that it's global
 			subfeatures = []
