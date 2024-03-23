@@ -8,8 +8,8 @@
 							  -------------------
 		begin                : 2020-02-24
 		git sha              : $Format:%H$
-		copyright            : (C) 2020 by Flying Turtle Ltd
-		email                : jonny@flyingturtle.co.uk
+		copyright            : (C) 2023 Lune Geographic
+		email                : info@lunegeographic.co.uk
  ***************************************************************************/
 
 /***************************************************************************
@@ -41,25 +41,17 @@
  *
 """
 
-# import Qt components (QGIS implementations)
-from qgis.PyQt.QtCore import QVariant, QSettings, QTranslator, QCoreApplication
+import sys
+import os.path
+from uuid import uuid4
+from .resources import *
+from qgis.utils import iface
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QFileDialog
-
-# Initialize Qt resources from file resources.py
-from .resources import *
-
-# Import the code for the dialog
 from .polygon_divider_dialog import PolygonDividerDialog
-import os.path
-
-# Import required QGIS components
-from qgis.core import Qgis, QgsGeometry, QgsPointXY, QgsField, QgsTask, QgsFeature, QgsVectorLayer, QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
-from qgis.utils import iface
-
-# Import standard libs for runtime
-import sys
-from uuid import uuid4
+from qgis.PyQt.QtCore import QVariant, QSettings, QTranslator, QCoreApplication
+from qgis.core import Qgis, QgsGeometry, QgsPointXY, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
+	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
 
 
 class BrentError(Exception):
@@ -418,7 +410,7 @@ class PolygonDividerTask(QgsTask):
 			return left, right, noncontiguous
 		else:
 			# log error
-			QgsMessageLog.logMessage("FAIL: Polygon division failed.", level=QgsMessageLog.CRITICAL)
+			QgsMessageLog.logMessage("FAIL: Polygon division failed.", level=Qgis.Critical)
 
 
 	def getSliceArea(self,sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
