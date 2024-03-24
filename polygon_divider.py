@@ -50,7 +50,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QFileDialog
 from .polygon_divider_dialog import PolygonDividerDialog
 from qgis.PyQt.QtCore import QVariant, QSettings, QTranslator, QCoreApplication
-from qgis.core import Qgis, QgsGeometry, QgsPointXY, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
+from qgis.core import Qgis, QgsGeometry, QgsPointXY, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
 	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
 
 
@@ -276,9 +276,33 @@ class PolygonDividerTask(QgsTask):
 		# need to take a deep copy for the incoming polygon, as splitGeometry edits it directly...
 		poly = QgsGeometry(polygon)
 
+		'''
+		TODO: SPLITGEOMETRY IS DEPRECATED, but...
+
+		TypeError: index 0 has type 'QgsPoint' but 'QgsPointXY' is expected 
+		Traceback (most recent call last):
+		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 126, in finished
+			raise self.exception
+		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 611, in run
+			sqArea = self.getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from top/right
+		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 429, in getSliceArea
+			left, right, residual = self.splitPoly(poly, splitter, horizontal, forward)
+		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 282, in splitPoly
+			res, polys, topolist = poly.splitGeometry(splitter, False)
+		TypeError: index 0 has type 'QgsPoint' but 'QgsPointXY' is expected
+
+		This is due to...
+			https://github.com/qgis/QGIS/issues/37821
+
+		See deprecation notes here:
+			https://api.qgis.org/api/deprecated.html
+		'''
+		# parse splitter into required objects
+		# splitter = [QgsPointXY(splitter[0][0], splitter[0][1]), QgsPointXY(splitter[1][0], splitter[1][1])]
+		splitter = [QgsPoint(splitter[0][0], splitter[0][1]), QgsPoint(splitter[1][0], splitter[1][1])]
+
 		# split poly (polygon) by splitter (line)
 		# http://gis.stackexchange.com/questions/114414/cannot-split-a-line-using-qgsgeometry-splitgeometry-in-qgis
-		# TODO: SPLITGEOMETRY IS DEPRECATED
 		res, polys, topolist = poly.splitGeometry(splitter, False)
 
 		# add poly (which might be a multipolygon) to the polys array
@@ -421,9 +445,9 @@ class PolygonDividerTask(QgsTask):
 
 		# construct a list of points representing a line by which to split the polygon
 		if horizontal:
-			splitter = [QgsPointXY(fixedCoord1, sliceCoord), QgsPointXY(fixedCoord2, sliceCoord)] # horizontal split
+			splitter = [(fixedCoord1, sliceCoord), (fixedCoord2, sliceCoord)] # horizontal split
 		else:
-			splitter = [QgsPointXY(sliceCoord, fixedCoord1), QgsPointXY(sliceCoord, fixedCoord2)] # vertical split
+			splitter = [(sliceCoord, fixedCoord1), (sliceCoord, fixedCoord2)] # vertical split
 
 		# split the polygon
 		left, right, residual = self.splitPoly(poly, splitter, horizontal, forward)
@@ -761,9 +785,9 @@ class PolygonDividerTask(QgsTask):
 
 								# create the desired cutline as lists of QgsPoints
 								if horizontal_flag:
-									line = [QgsPointXY(fixedCoords[0], result), QgsPointXY(fixedCoords[1], result)] # horizontal split
+									line = [(fixedCoords[0], result), (fixedCoords[1], result)] # horizontal split
 								else:
-									line = [QgsPointXY(result, fixedCoords[0]), QgsPointXY(result, fixedCoords[1])] # vertical split
+									line = [(result, fixedCoords[0]), (result, fixedCoords[1])] # vertical split
 
 								# calculate the resulting polygons - poly will be sliced again, initialSlice will be subdivided
 								poly, initialSlice, residuals = self.splitPoly(poly, line, horizontal_flag, forward_flag)
@@ -862,9 +886,9 @@ class PolygonDividerTask(QgsTask):
 
 								# create the desired cutline as lists of QgsPoints
 								if horizontal_flag:
-									sliceLine = [QgsPointXY(sliceResult, sliceFixedCoords[0]), QgsPointXY(sliceResult, sliceFixedCoords[1])]	# horizontal split
+									sliceLine = [(sliceResult, sliceFixedCoords[0]), (sliceResult, sliceFixedCoords[1])]	# horizontal split
 								else:
-									sliceLine = [QgsPointXY(sliceFixedCoords[0], sliceResult), QgsPointXY(sliceFixedCoords[1], sliceResult)]	# vertical split
+									sliceLine = [(sliceFixedCoords[0], sliceResult), (sliceFixedCoords[1], sliceResult)]	# vertical split
 
 								# calculate the resulting polygons - initialSlice becomes left (to be chopped again)
 								initialSlice, right, residuals = self.splitPoly(initialSlice, sliceLine, sliceHorizontal, forward_flag)
