@@ -5,7 +5,7 @@
 # Mandatory items:
 [general]
 name=Polygon Divider
-qgisMinimumVersion=3.32
+qgisMinimumVersion=3.28
 description=Divides polygons into smaller 'squareish' polygons of a specified size
 version=0.10
 author=Jonny Huck
