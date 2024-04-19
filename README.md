@@ -38,6 +38,19 @@ The software should work well on some quite complex polygons:
 
 In cases where the algorithm finds the geometry difficult to divide, it will make the polygons slightly less square and more rectangular (as is illustrated in both of the above examples). If you find that it doesn't manage to divide a certain geometry at all, then you can normally remedy this by simplifying it a little.
 
+### Rotation
+
+![rotation example original](images/rotation_example_original.png)
+
+consider the following polygon:
+if we divide it without rotating it prior, we get the following result:
+
+![rotation example divided without rotation](images/rotation_example_divided_not_rotated.png)
+
+if we rotate it 45 degrees, we get the following result:
+
+![rotation example divided with rotation](images/rotation_example_divided_rotated.png)
+
 Please do get in touch with a copy of any polygons that do not work, they will help us continue to improve this plugin!
 
 #### Data Considerations:
