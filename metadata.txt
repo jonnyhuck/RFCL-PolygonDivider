@@ -6,10 +6,10 @@
 [general]
 name=Polygon Divider
 qgisMinimumVersion=3.32
-description=Divides polygons into smaller 'squareish' polygons of a specified size
-version=0.10
+description=Divides polygons into into an irregular grid of equal area 'squareish' polygons of a specified size 
+version=0.11
 author=Jonny Huck
-email=info@lunegeographic.co.uk
+email=polygondivider@lunegeographic.co.uk
 
 about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on. <br/> <br/> Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples. This version will work on QGIS 3.32 and above only, for previous QGIS versions please use version 0.9 of this plugin.
 
