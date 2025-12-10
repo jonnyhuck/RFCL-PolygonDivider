@@ -49,10 +49,9 @@ from qgis.utils import iface
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QFileDialog
 from .polygon_divider_dialog import PolygonDividerDialog
-from qgis.PyQt.QtCore import QVariant, QSettings, QTranslator, QCoreApplication
-from qgis.core import Qgis, QgsGeometry, QgsPointXY, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QMetaType
+from qgis.core import Qgis, QgsGeometry, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
 	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
-
 
 class BrentError(Exception):
 	"""
@@ -123,7 +122,9 @@ class PolygonDividerTask(QgsTask):
 			else:
 				QgsMessageLog.logMessage(f'Polygon Division Exception: {self.exception}', MESSAGE_CATEGORY, Qgis.Critical)
 				iface.messageBar().pushMessage("Error:", f'Polygon Division Failed: {str(self.exception)}', level=Qgis.Critical)
-				# raise self.exception
+				
+				# UN-COMMENT THIS TO SEE STACK TRACE
+				raise self.exception
 
 
 	def cancel(self):
@@ -276,34 +277,14 @@ class PolygonDividerTask(QgsTask):
 		# need to take a deep copy for the incoming polygon, as splitGeometry edits it directly...
 		poly = QgsGeometry(polygon)
 
-		'''
-		TODO: SPLITGEOMETRY IS DEPRECATED, but...
-
-		TypeError: index 0 has type 'QgsPoint' but 'QgsPointXY' is expected 
-		Traceback (most recent call last):
-		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 126, in finished
-			raise self.exception
-		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 611, in run
-			sqArea = self.getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from top/right
-		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 429, in getSliceArea
-			left, right, residual = self.splitPoly(poly, splitter, horizontal, forward)
-		File "/Users/jonnyhuck/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/Submission/polygon_divider.py", line 282, in splitPoly
-			res, polys, topolist = poly.splitGeometry(splitter, False)
-		TypeError: index 0 has type 'QgsPoint' but 'QgsPointXY' is expected
-
-		This is due to...
-			https://github.com/qgis/QGIS/issues/37821
-
-		See deprecation notes here:
-			https://api.qgis.org/api/deprecated.html
-		'''
 		# parse splitter into required objects
-		# splitter = [QgsPointXY(splitter[0][0], splitter[0][1]), QgsPointXY(splitter[1][0], splitter[1][1])]
 		splitter = [QgsPoint(splitter[0][0], splitter[0][1]), QgsPoint(splitter[1][0], splitter[1][1])]
 
 		# split poly (polygon) by splitter (line)
 		# http://gis.stackexchange.com/questions/114414/cannot-split-a-line-using-qgsgeometry-splitgeometry-in-qgis
 		res, polys, topolist = poly.splitGeometry(splitter, False)
+
+		# TODO: THE ERROR IS THAT THIS IS RETURNING 1001
 
 		# add poly (which might be a multipolygon) to the polys array
 		if poly.isMultipart():
@@ -434,7 +415,7 @@ class PolygonDividerTask(QgsTask):
 			return left, right, noncontiguous
 		else:
 			# log error
-			QgsMessageLog.logMessage("FAIL: Polygon division failed.", level=Qgis.Critical)
+			QgsMessageLog.logMessage(f"FAIL: Polygon division failed ({res})", level=Qgis.Critical)
 
 
 	def getSliceArea(self,sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
@@ -500,7 +481,8 @@ class PolygonDividerTask(QgsTask):
 
 			# initial settings
 			t = self.tolerance   # initial tolerance for function rooting - this is flexible now it has been divorced from the buffer
-			buffer = 1e-6        # this is the buffer to ensure that an intersection occurs
+			buffer = 1e-5        # this is the buffer to ensure that an intersection occurs
+			# TODO: this buffer value started causing splitGeometry to fail when it was 1e-6 - check this if it happens again
 
 			# set the direction (horizontal or vertical)
 			if direction < 2:
@@ -526,11 +508,11 @@ class PolygonDividerTask(QgsTask):
 
 			# TODO: NEED TO CHECK IF THEY ALREADY EXIST
 			# add new fields for this tool
-			fieldList.append(QgsField('POLY_ID', QVariant.Int))
-			fieldList.append(QgsField('UNIQUE_ID', QVariant.String))
-			fieldList.append(QgsField('AREA', QVariant.Double))
-			fieldList.append(QgsField('POINTX', QVariant.Int))
-			fieldList.append(QgsField('POINTY', QVariant.Int))
+			fieldList.append(QgsField('POLY_ID', QMetaType.Type.Int))
+			fieldList.append(QgsField('UNIQUE_ID', QMetaType.Type.QString))
+			fieldList.append(QgsField('AREA', QMetaType.Type.Double))
+			fieldList.append(QgsField('POINTX', QMetaType.Type.Int))
+			fieldList.append(QgsField('POINTY', QMetaType.Type.Int))
 
 			# create a new shapefile to write the results to
 			transform_context = QgsProject.instance().transformContext()
@@ -1273,7 +1255,7 @@ class PolygonDivider:
 			direction = self.dlg.comboBox_2.currentIndex()
 			tolerance = float(self.dlg.lineEdit_4.text())
 
-			# if the user has selected number of features option
+			# if the user has selected number of divisions option, calculate target area
 			if self.dlg.radioButton_2.isChecked():
 
 				# sum the area of all features in the input layer
@@ -1281,8 +1263,15 @@ class PolygonDivider:
 				for feature in inFile.getFeatures():
 					total_area += feature.geometry().area()
 
-				# calculate the desired target area
-				targetArea = int((total_area / float(self.dlg.lineEdit_3.text())) + 0.5)
+				# get the number of divisions the user entered
+				num_divisions = int(self.dlg.lineEdit_3.text())
+
+				# calculate target area for each division
+				targetArea = total_area / float(num_divisions)
+
+				# turn off absorb flag for this case
+				# TODO: enforce this in the UI
+				absorbFlag = False
 
 			# launch the task
 			self.tm.addTask(PolygonDividerTask(inFile, outFilePath, targetArea, absorbFlag, direction, tolerance))
