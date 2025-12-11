@@ -1,6 +1,4 @@
-# ![icon](icon.png) Polygon Divider QGIS Plugin
-
-### Now available for QGIS 3 (QGIS2 version available in [this branch](https://github.com/jonnyhuck/RFCL-PolygonDivider/tree/QGIS2-version))
+# ![icon](icon.png) QGIS Polygon Divider Plugin
 
 **Polygon Divider** is a plugin for [QGIS](http://www.qgis.org/en/site/) that takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on.
 
@@ -36,27 +34,25 @@ The software should work well on some quite complex polygons:
 
 ![complex division example 1](images/complex2.png)
 
-In cases where the algorithm finds the geometry difficult to divide, it will make the polygons slightly less square and more rectangular (as is illustrated in both of the above examples). If you find that it doesn't manage to divide a certain geometry at all, then you can normally remedy this by simplifying it a little.
+You can also set a rotation for the cutline. In the example below, the left image (labelled **b**) has the rotation set to 0&deg; and the right image (labelled **c**) has the rotation set to 315&deg;:
 
-### Rotation
-
-![rotation example original](images/rotation_example_original.png)
-
-consider the following polygon:
-if we divide it without rotating it prior, we get the following result:
-
-![rotation example divided without rotation](images/rotation_example_divided_not_rotated.png)
-
-if we rotate it 45 degrees, we get the following result:
-
-![rotation example divided with rotation](images/rotation_example_divided_rotated.png)
-
-Please do get in touch with a copy of any polygons that do not work, they will help us continue to improve this plugin!
+![rotation example original](images/not_rotated.png) ![rotation example original](images/rotated.png)
 
 #### Data Considerations:
-The Polygon Divider expects planar geometry (x,y coordinates) and will not divide geographical coordinates (degrees).  If you are using geographical coordinates you must save your dataset using a Projected Coordinate System (It is recommended that you use either a local or equal area projection).  Note that while QGIS will allow you to change the CRS for the project/layer, doing so is not enough as it does not save the data and only reprojects the view for the user.
+The Polygon Divider expects **planar geometry** (x,y coordinates) and will not divide geographical coordinates (those in degrees, e.g., WGS84). 
+
+If you want to divide a dataset that is stored in geographical coordinates (e.g., WGS84) you must save a new copy of your dataset (right click &rarr; export) using a **Projected Coordinate System**. I would recommend using an **equal area** projection (ideally a local equal area projection) to avoid distortion in the projection from affecting your results. You can either select a suitable projected CRS from the built-in selection in QGIS, or make a local equal area projection yourself using the [Projection Wizard](https://projectionwizard.org/) website and add it as a Custom CRS.  
+
+Please note that setting the workspace CRS or right clicking on a layer and selecting "set CRS" is **not sufficient**, as neither of these approaches actually transforms the dataset!
+
+#### Referencing the Plugin
+
+If you use the plugin in academic work, or want to learn more about how it works, please use the reference to the journal article below:
+
+[Huck, J. (2025). The QGIS Polygon Divider: Polygon partition into an irregular equal area grid. *Environment and Planning B: Urban Analytics and City Science*, 23998083251378340.](https://journals.sagepub.com/doi/full/10.1177/23998083251378340) 
 
 #### Acknowledgements:
+
 The QGIS2 (original) version of this plugin was funded by [Zero Waste Scotland Ltd.](http://www.zerowastescotland.org.uk/). The conversion to QGIS3 was funded by [Deutsche Forestservice GMBH](https://www.dfs-online.de/).
 
 Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post and the [pyroots](https://pypi.python.org/pypi/pyroots/0.1.0)  implementation of Brent's method.

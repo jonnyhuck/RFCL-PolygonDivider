@@ -24,11 +24,11 @@
  * This script divides a polygon into squareish sections of a specified size
  *
  * ERROR WE CAN FIX BY ADJUSTING TOLERANCE / N_SUBDIVISIONS:
- *  - Bracket is smaller than tolerance: the shape got smaller? OR got dramatically bigger. Can we check this? This is where we just want to cut at the last location that worked and re-calculate the division stuff.
+ *  - Bracket is smaller than tolerance: the shape got smaller? OR got dramatically bigger. Can we check this? This is where we just want 
+ 		to cut at the last location that worked and re-calculate the division stuff.
  *
  * TODO'S:
  *  - Needs some form of form validation
- *  - There are two deprecated functions in this code
  *  - Pull out repeated file writing stuff into a function
  *  - Where / how often should we calculate the desired area?
  *  - How should we be dealing with reversing direction for subdivision?
@@ -43,6 +43,7 @@
 
 import sys
 import os.path
+from . import rotation
 from uuid import uuid4
 from .resources import *
 from qgis.utils import iface
@@ -52,7 +53,6 @@ from .polygon_divider_dialog import PolygonDividerDialog
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QMetaType
 from qgis.core import Qgis, QgsGeometry, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
 	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
-from . import rotation
 
 class BrentError(Exception):
 	"""
