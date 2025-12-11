@@ -52,6 +52,7 @@ from .polygon_divider_dialog import PolygonDividerDialog
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QMetaType
 from qgis.core import Qgis, QgsGeometry, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
 	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
+from . import rotation
 
 class BrentError(Exception):
 	"""
@@ -74,7 +75,7 @@ class PolygonDividerTask(QgsTask):
 
 	''' INHERITED CLASS FUNCTIONS '''
 
-	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction, tolerance):
+	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction, tolerance, rotation_in_degrees):
 		"""
 		* Initialise the thread
 		"""
@@ -89,7 +90,11 @@ class PolygonDividerTask(QgsTask):
 		self.direction = direction
 		self.tolerance = tolerance
 		self.exception = None
+		self.rotation_in_degrees = rotation_in_degrees
 
+		# point of rotation
+		self.rotation_center = f"{0},{0}"
+		self.rotation_success = False
 
 	def finished(self, result):
 		"""
@@ -454,6 +459,27 @@ class PolygonDividerTask(QgsTask):
 		"""
 		* Actually do the processing
 		"""
+		layer = None
+
+		# first 'try' to rotate the layer
+		# rotate only if rotation number set, if 0, no need to rotate
+		if self.rotation_in_degrees:
+			try:
+				layer = rotation.rotate_layer(
+					input_path=self.layer.source(),
+					degrees=self.rotation_in_degrees,
+					rotation_center=self.rotation_center
+				)
+				layer.updateExtents(True)
+			except Exception:
+				pass
+
+		# if the rotation was set, but fails
+		# continue with the original file, else set rotated layer
+		if layer is not None:
+			self.layer = layer
+			# if all went well, set the rotation flag to rotate again at the end
+			self.rotation_success = True
 
 		# This whole function is in a catch-all try statement to avoid QGIS burying exceptions.
 		try:
@@ -517,11 +543,12 @@ class PolygonDividerTask(QgsTask):
 			# create a new shapefile to write the results to
 			transform_context = QgsProject.instance().transformContext()
 			save_options = QgsVectorFileWriter.SaveVectorOptions()
-			save_options.driverName = "ESRI Shapefile"
+			# .shp and .gpkg are supported
+			save_options.driverName = "ESRI Shapefile" if outFilePath.endswith('.shp') else "GPKG"
 			save_options.fileEncoding = "UTF-8"
 			writer = QgsVectorFileWriter.create(outFilePath, fieldList, QgsWkbTypes.Polygon, layer.crs(), transform_context, save_options)
 			if writer.hasError() != QgsVectorFileWriter.NoError:
-				QgsMessageLog.logMessage(f"Error when creating shapefile: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
+				QgsMessageLog.logMessage(f"Error when creating {save_options.driverName}: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
 
 
 			# define this to ensure that it's global
@@ -996,8 +1023,27 @@ class PolygonDividerTask(QgsTask):
 				return False
 
 			# finally, open the resulting file and return it
+			# but first close the driver for writing
+			del writer
+
 			layer = QgsVectorLayer(outFilePath, 'Divided Polygon', 'ogr')
+
 			if layer.isValid():
+				# rotate the layer if the flag was set
+				if self.rotation_success:
+					layer.updateExtents(True)
+					rotation.rotate_layer_in_place(
+						input_layer=layer,
+						degrees=-self.rotation_in_degrees,
+						rotation_center=self.rotation_center
+					)
+					# TODO: extent calculation fails (but no error is thrown in QGIS 3.28) when updating shapefile, but everything is alright when layer is saved as a GPKG
+					# it is not a critical error, layer is still valid and geometry has no errors
+					# just QGIS's 'Zoom to Layer(s)' might not center the layer correctly, as it depends on extent
+					layer.updateExtents(True)
+					layer.commitChanges()
+
+					del layer
 				# return success
 				return True
 			else:
@@ -1148,17 +1194,13 @@ class PolygonDivider:
 		"""
 
 		# get filename from dialog
-		filename = QFileDialog.getSaveFileName(self.dlg, "Select output file ","", '*.shp')[0]
+		filename = QFileDialog.getSaveFileName(self.dlg, "Select output file ","", "Shapefiles (*.shp);;GeoPackage (*.gpkg)")[0]
 
 		# verify that a name was selected
 		if filename != "":
 
 			# clear previous value
 			self.dlg.lineEdit_2.clear()
-
-			# make sure that an extension was included
-			if filename[-4:] != '.shp':
-				filename += '.shp'
 
 			# put the result in the text box on the dialog
 			self.dlg.lineEdit_2.setText(filename)
@@ -1254,6 +1296,7 @@ class PolygonDivider:
 			absorbFlag = self.dlg.checkBox.isChecked()
 			direction = self.dlg.comboBox_2.currentIndex()
 			tolerance = float(self.dlg.lineEdit_4.text())
+			rotation_in_degrees = float(self.dlg.doubleSpinBoxRotation.value())
 
 			# if the user has selected number of divisions option, calculate target area
 			if self.dlg.radioButton_2.isChecked():
@@ -1274,4 +1317,4 @@ class PolygonDivider:
 				absorbFlag = False
 
 			# launch the task
-			self.tm.addTask(PolygonDividerTask(inFile, outFilePath, targetArea, absorbFlag, direction, tolerance))
+			self.tm.addTask(PolygonDividerTask(inFile, outFilePath, targetArea, absorbFlag, direction, tolerance, rotation_in_degrees))
