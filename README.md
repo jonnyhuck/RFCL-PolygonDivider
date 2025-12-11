@@ -10,7 +10,7 @@ As a simple worked example, you can take a polygon like this:
 
 ![divided hull](images/dividedhull.png)
 
-There are two options available to the user when dividing a polygon. The above uses the **absorb** method, whereby all of the polygons are slightly larger than the requested size, in order to 'absorb' any odd-sized 'offcuts' that would otherwise be left behind. The other alternative would be the **offcut** method. An example of this is given below, in which all of the polygons would be the precise size as requested, except for the light green one at the very top, which represente the *'offcut'*:
+There are two options available to the user when dividing a polygon. The above uses the **absorb** method, whereby all of the polygons are slightly larger than the requested size, in order to 'absorb' any odd-sized 'offcuts' that would otherwise be left behind. The other alternative would be the **offcut** method. An example of this is given below, in which all of the polygons would be the precise size as requested, except for the light green one at the very top, which is the *'offcut'*:
 
 ![offcut hull](images/hulloffcut.png)
 
@@ -34,7 +34,7 @@ The software should work well on some quite complex polygons:
 
 ![complex division example 1](images/complex2.png)
 
-You can also set a rotation for the cutline. In the example below, the left image (labelled **b**) has the rotation set to 0&deg; and the right image (labelled **c**) has the rotation set to 315&deg;:
+You can also set a rotation for the cutline. In the example below, the left image (labelled **b**) has the rotation set to 0&deg; and the right image (labelled **c**) has the rotation set to 45&deg; (both cut in the *left to right* direction):
 
 ![rotation example original](images/not_rotated.png) ![rotation example original](images/rotated.png)
 

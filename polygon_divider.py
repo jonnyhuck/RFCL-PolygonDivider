@@ -1298,6 +1298,11 @@ class PolygonDivider:
 			tolerance = float(self.dlg.lineEdit_4.text())
 			rotation_in_degrees = float(self.dlg.doubleSpinBoxRotation.value())
 
+			# invert rotation direction if it is not 0 (so we are effectively rotating the cutline, not the polygon)
+			QgsMessageLog.logMessage(f"{rotation_in_degrees}", MESSAGE_CATEGORY, Qgis.Info)
+			rotation_in_degrees = 360 - rotation_in_degrees
+			QgsMessageLog.logMessage(f"{rotation_in_degrees}", MESSAGE_CATEGORY, Qgis.Info)
+
 			# if the user has selected number of divisions option, calculate target area
 			if self.dlg.radioButton_2.isChecked():
 
