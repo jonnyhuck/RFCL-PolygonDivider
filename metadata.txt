@@ -5,13 +5,14 @@
 # Mandatory items:
 [general]
 name=Polygon Divider
-qgisMinimumVersion=3.32
-description=Divides polygons into into an irregular grid of equal area 'squareish' polygons of a specified size 
+qgisMinimumVersion=3.40
+qgisMaximumVersion=4.99
+description=Divides polygons into into an irregular grid of equal area 'squareish' polygons of a specified size
 version=0.12
 author=Jonny Huck
 email=polygondivider@lunegeographic.co.uk
 
-about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on. <br/> <br/> Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples. This version will work on QGIS 3.32 and above only, for previous QGIS versions please use version 0.9 of this plugin.
+about=Polygon Divider takes a polygon and efficiently divides it into a number of 'squareish' polygons of a defined size, which is useful for a multitude of applications such as land parceling, environmental sampling, and so on. <br/> <br/> Each output polygon inherits all of the attributes from its parent, as well as a number of additional attributes (id, uuid, area, representative point coordinates) that are described in the repository along with some usage examples. This version will work on QGIS 3.40 and above (including QGIS 4), for previous QGIS versions please use version 0.9 of this plugin.
 
 tracker=https://github.com/jonnyhuck/RFCL-PolygonDivider/issues
 repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
@@ -30,6 +31,7 @@ changelog=
       * POINTX / POINTY are now written as decimals rather than being truncated to whole numbers
       * When absorbing offcuts, the number of pieces is now chosen to keep piece sizes as close as possible to the target area
       * Rotation now happens around the centre of the layer rather than the origin of the CRS
+      * Now compatible with both QGIS 3 (3.40+, Qt5) and QGIS 4 (Qt6)
       * Added form validation and various minor bug fixes
 
 # Tags are comma separated with spaces allowed

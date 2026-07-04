@@ -55,4 +55,4 @@ If you use the plugin in academic work, or want to learn more about how it works
 
 The QGIS2 (original) version of this plugin was funded by [Zero Waste Scotland Ltd.](http://www.zerowastescotland.org.uk/). The conversion to QGIS3 was funded by [Deutsche Forestservice GMBH](https://www.dfs-online.de/).
 
-Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post and the [pyroots](https://pypi.python.org/pypi/pyroots/0.1.0)  implementation of Brent's method.
+Development was greatly assisted by the accepted answer to [this](http://gis.stackexchange.com/questions/5300/dividing-polygon-into-specific-sizes-using-arcgis) forum post. The Bren't method implementations are from the excellent [pyroots](https://pypi.python.org/pypi/pyroots/)  library.

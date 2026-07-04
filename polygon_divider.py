@@ -35,7 +35,6 @@
 import os.path
 import traceback
 from uuid import uuid4
-from .resources import *
 from qgis import processing
 from qgis.utils import iface
 from qgis.PyQt.QtGui import QIcon
@@ -45,7 +44,7 @@ from .polygon_divider_dialog import PolygonDividerDialog
 from processing.gui.AlgorithmExecutor import execute_in_place
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QMetaType
 from qgis.core import Qgis, QgsGeometry, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
-	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
+	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication
 
 class BrentError(Exception):
 	"""
@@ -110,7 +109,7 @@ class PolygonDividerTask(QgsTask):
 		* Initialise the thread
 		"""
 		# call constructor for QsgThread
-		super().__init__("Polygon Division", QgsTask.CanCancel)
+		super().__init__("Polygon Division", QgsTask.Flag.CanCancel)
 
 		# load arguments into class variables
 		self.layer = layer
@@ -145,13 +144,13 @@ class PolygonDividerTask(QgsTask):
 		if result:
 
 			# Notify User
-			QgsMessageLog.logMessage('Polygon Division completed', MESSAGE_CATEGORY, Qgis.Success)
-			iface.messageBar().pushMessage("Success!", 'Polygon Division completed', level=Qgis.Success, duration=3)
+			QgsMessageLog.logMessage('Polygon Division completed', MESSAGE_CATEGORY, Qgis.MessageLevel.Success)
+			iface.messageBar().pushMessage("Success!", 'Polygon Division completed', level=Qgis.MessageLevel.Success, duration=3)
 
 			# warn the user if any polygons could not be divided
 			if self.n_failed > 0:
-				QgsMessageLog.logMessage(f'{self.n_failed} polygon(s) could not be divided after trying all four directions and were written undivided', MESSAGE_CATEGORY, Qgis.Warning)
-				iface.messageBar().pushMessage("Warning:", f'{self.n_failed} polygon(s) could not be divided and were written undivided', level=Qgis.Warning, duration=6)
+				QgsMessageLog.logMessage(f'{self.n_failed} polygon(s) could not be divided after trying all four directions and were written undivided', MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
+				iface.messageBar().pushMessage("Warning:", f'{self.n_failed} polygon(s) could not be divided and were written undivided', level=Qgis.MessageLevel.Warning, duration=6)
 
 			# finally, open the resulting file and return it
 			layer = iface.addVectorLayer(self.outFilePath, 'Divided Polygon', "ogr")
@@ -159,21 +158,21 @@ class PolygonDividerTask(QgsTask):
 			# alert if invalid (NB: don't raise here - this runs on the main thread, so an
 			#  unhandled exception could take the whole of QGIS down with it)
 			if layer is None or not layer.isValid():
-				QgsMessageLog.logMessage('Output Dataset Invalid', MESSAGE_CATEGORY, Qgis.Critical)
-				iface.messageBar().pushMessage("Error:", 'Output Dataset Invalid', level=Qgis.Critical)
+				QgsMessageLog.logMessage('Output Dataset Invalid', MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
+				iface.messageBar().pushMessage("Error:", 'Output Dataset Invalid', level=Qgis.MessageLevel.Critical)
 
 		# failure
 		else:
 			# failed without exception (user cancel)
 			if self.exception is None:
-				QgsMessageLog.logMessage('Polygon Division exited without exception', MESSAGE_CATEGORY, Qgis.Warning)
-				iface.messageBar().pushMessage("Warning:", 'Polygon Division Cancelled', level=Qgis.Warning, duration=3)
+				QgsMessageLog.logMessage('Polygon Division exited without exception', MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
+				iface.messageBar().pushMessage("Warning:", 'Polygon Division Cancelled', level=Qgis.MessageLevel.Warning, duration=3)
 
 			# failed with exception (report it, including the stack trace to the log for debugging)
 			else:
 				stack_trace = ''.join(traceback.format_exception(type(self.exception), self.exception, self.exception.__traceback__))
-				QgsMessageLog.logMessage(f'Polygon Division Exception: {stack_trace}', MESSAGE_CATEGORY, Qgis.Critical)
-				iface.messageBar().pushMessage("Error:", f'Polygon Division Failed: {str(self.exception)}', level=Qgis.Critical)
+				QgsMessageLog.logMessage(f'Polygon Division Exception: {stack_trace}', MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
+				iface.messageBar().pushMessage("Error:", f'Polygon Division Failed: {str(self.exception)}', level=Qgis.MessageLevel.Critical)
 
 
 	def cancel(self):
@@ -182,7 +181,7 @@ class PolygonDividerTask(QgsTask):
 		"""
 
 		# log that the task was cancelled
-		QgsMessageLog.logMessage("Polygon Division was manually cancelled by the user", MESSAGE_CATEGORY, Qgis.Info)
+		QgsMessageLog.logMessage("Polygon Division was manually cancelled by the user", MESSAGE_CATEGORY, Qgis.MessageLevel.Info)
 
 		# run the cancel method from QgsTask
 		super().cancel()
@@ -377,7 +376,7 @@ class PolygonDividerTask(QgsTask):
 		else:
 			# log the error and raise an exception - this is caught by the caller (either to try another
 			#  cut direction, or by the catch-all in run() so that the user gets to see the message)
-			QgsMessageLog.logMessage(f"FAIL: Polygon division failed ({res})", MESSAGE_CATEGORY, Qgis.Critical)
+			QgsMessageLog.logMessage(f"FAIL: Polygon division failed ({res})", MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
 			raise Exception(f"Failed to split polygon (splitGeometry returned {res})")
 
 
@@ -431,7 +430,7 @@ class PolygonDividerTask(QgsTask):
 				layer.updateExtents(True)
 			except Exception as e:
 				# log the problem so that the user knows (processing continues with the un-rotated original)
-				QgsMessageLog.logMessage(f"Rotation failed ({e}), continuing without rotation", MESSAGE_CATEGORY, Qgis.Warning)
+				QgsMessageLog.logMessage(f"Rotation failed ({e}), continuing without rotation", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 				layer = None
 
 		# if the rotation was set, but fails
@@ -445,7 +444,7 @@ class PolygonDividerTask(QgsTask):
 		try:
 
 			# setup for progress bar ad message
-			QgsMessageLog.logMessage("Started Polygon Division", MESSAGE_CATEGORY, Qgis.Info)
+			QgsMessageLog.logMessage("Started Polygon Division", MESSAGE_CATEGORY, Qgis.MessageLevel.Info)
 
 			# get data out of object
 			layer = self.layer
@@ -456,7 +455,7 @@ class PolygonDividerTask(QgsTask):
 
 			# validation that the file is projected
 			if layer.crs().isGeographic():
-				QgsMessageLog.logMessage("Whoops! The Polygon Divider requires a projected dataset - please save a copy with a projected CRS and try again.", MESSAGE_CATEGORY, Qgis.Critical)
+				QgsMessageLog.logMessage("Whoops! The Polygon Divider requires a projected dataset - please save a copy with a projected CRS and try again.", MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
 				self.exception = Exception("Whoops! The Polygon Divider requires a projected dataset - please save a copy with a projected CRS and try again.")
 				return False
 
@@ -492,7 +491,7 @@ class PolygonDividerTask(QgsTask):
 				if fieldList.lookupField(field.name()) == -1:
 					fieldList.append(field)
 				else:
-					QgsMessageLog.logMessage(f"The field {field.name()} already exists in the input data - its values will be overwritten in the output", MESSAGE_CATEGORY, Qgis.Warning)
+					QgsMessageLog.logMessage(f"The field {field.name()} already exists in the input data - its values will be overwritten in the output", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 
 			# create a new shapefile to write the results to
 			transform_context = QgsProject.instance().transformContext()
@@ -510,10 +509,10 @@ class PolygonDividerTask(QgsTask):
 				while fieldList.lookupField(fidName) != -1:
 					fidName += '_'
 				save_options.layerOptions = [f'FID={fidName}']
-				QgsMessageLog.logMessage(f"The input data has a 'fid' field, so the GeoPackage primary key will be called {fidName}", MESSAGE_CATEGORY, Qgis.Info)
-			writer = QgsVectorFileWriter.create(outFilePath, fieldList, QgsWkbTypes.Polygon, layer.crs(), transform_context, save_options)
-			if writer.hasError() != QgsVectorFileWriter.NoError:
-				QgsMessageLog.logMessage(f"Error when creating {save_options.driverName}: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
+				QgsMessageLog.logMessage(f"The input data has a 'fid' field, so the GeoPackage primary key will be called {fidName}", MESSAGE_CATEGORY, Qgis.MessageLevel.Info)
+			writer = QgsVectorFileWriter.create(outFilePath, fieldList, Qgis.WkbType.Polygon, layer.crs(), transform_context, save_options)
+			if writer.hasError() != QgsVectorFileWriter.WriterError.NoError:
+				QgsMessageLog.logMessage(f"Error when creating {save_options.driverName}: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
 
 
 			# define this to ensure that it's global
@@ -560,7 +559,7 @@ class PolygonDividerTask(QgsTask):
 				# write the feature to the out file, checking that it actually worked (a failure here would
 				#  otherwise be silent, resulting in missing features in the output)
 				if not writer.addFeature(fet):
-					QgsMessageLog.logMessage(f"Failed to write a feature to the output file: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
+					QgsMessageLog.logMessage(f"Failed to write a feature to the output file: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
 					self.n_write_errors += 1
 
 				# increment feature counter
@@ -578,10 +577,8 @@ class PolygonDividerTask(QgsTask):
 			# loop through all of the features in the input data
 			for feat in layer.getFeatures():
 
-				# verify that it is a polygon
-				if feat.geometry().wkbType() in [QgsWkbTypes.Polygon, QgsWkbTypes.PolygonZ,
-					QgsWkbTypes.PolygonM, QgsWkbTypes.PolygonZM, QgsWkbTypes.MultiPolygon,
-					QgsWkbTypes.MultiPolygonZ, QgsWkbTypes.MultiPolygonM, QgsWkbTypes.MultiPolygonZM]:
+				# verify that it is a polygon (this covers all of the polygon and multipolygon variants, including Z / M)
+				if feat.geometry().type() == Qgis.GeometryType.Polygon:
 
 					# get the attributes to write out
 					currAttributes = feat.attributes()
@@ -591,7 +588,7 @@ class PolygonDividerTask(QgsTask):
 
 					# if the buffer came back as None, skip
 					if bufferedPolygon is None:
-						QgsMessageLog.logMessage("A polygon could not be buffered by QGIS, ignoring", MESSAGE_CATEGORY, Qgis.Info)
+						QgsMessageLog.logMessage("A polygon could not be buffered by QGIS, ignoring", MESSAGE_CATEGORY, Qgis.MessageLevel.Info)
 						continue
 
 					# make multipolygon into list of polygons...
@@ -720,7 +717,7 @@ class PolygonDividerTask(QgsTask):
 									if result is not None:
 										break
 									else:
-										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Division)", MESSAGE_CATEGORY, Qgis.Warning)
+										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Division)", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 
 								# if none of the four directions worked then we have to give up on this polygon
 								if result is None:
@@ -729,7 +726,7 @@ class PolygonDividerTask(QgsTask):
 									writeFeature(poly, currAttributes)
 
 									# log that there was a problem and count it for the final report to the user
-									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.Warning)
+									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 									self.n_failed += 1
 
 									# clear the stored exception, as we are carrying on rather than failing
@@ -833,7 +830,7 @@ class PolygonDividerTask(QgsTask):
 									if sliceResult is not None:
 										break
 									else:
-										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Subdivision)", MESSAGE_CATEGORY, Qgis.Warning)
+										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Subdivision)", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 
 								# if none of the four directions worked then we have to give up on this slice
 								if sliceResult is None:
@@ -842,7 +839,7 @@ class PolygonDividerTask(QgsTask):
 									writeFeature(initialSlice, currAttributes)
 
 									# log that there was a problem and count it for the final report to the user
-									QgsMessageLog.logMessage("There was an un-subdividable slice in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.Warning)
+									QgsMessageLog.logMessage("There was an un-subdividable slice in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.MessageLevel.Warning)
 									self.n_failed += 1
 
 									# clear the stored exception, as we are carrying on rather than failing
@@ -880,7 +877,7 @@ class PolygonDividerTask(QgsTask):
 						if not gaveUp and not poly.isEmpty() and poly.area() > t:
 							writeFeature(poly, currAttributes)
 				else:
-					QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", MESSAGE_CATEGORY, Qgis.Critical)
+					QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", MESSAGE_CATEGORY, Qgis.MessageLevel.Critical)
 					self.exception = Exception("Whoops! That dataset isn't polygons!")
 					return False
 
@@ -935,8 +932,8 @@ class PolygonDivider:
 		self.iface = iface
 		# initialize plugin directory
 		self.plugin_dir = os.path.dirname(__file__)
-		# initialize locale
-		locale = QSettings().value('locale/userLocale')[0:2]
+		# initialize locale (falling back to English if no locale has been set)
+		locale = (QSettings().value('locale/userLocale') or 'en')[0:2]
 		locale_path = os.path.join(
 			self.plugin_dir,
 			'i18n',
@@ -1093,7 +1090,9 @@ class PolygonDivider:
 	def initGui(self):
 		"""Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-		icon_path = ':/plugins/polygon_divider/icon.png'
+		# the icon is loaded directly from the plugin directory (rather than from a compiled Qt
+		#  resource file, which would need to be built differently for Qt5 and Qt6)
+		icon_path = os.path.join(self.plugin_dir, 'icon.png')
 		self.add_action(
 			icon_path,
 			text=self.tr(u'Polygon Divider'),
@@ -1155,8 +1154,8 @@ class PolygonDivider:
 		# show the dialog
 		self.dlg.show()
 
-		# Run the dialog event loop
-		result = self.dlg.exec_()
+		# Run the dialog event loop (NB: not the old exec_(), which no longer exists under Qt6)
+		result = self.dlg.exec()
 
 		# See if OK was pressed
 		if result:
@@ -1175,7 +1174,7 @@ class PolygonDivider:
 				inFile = layers[self.dlg.comboBox.currentIndex()].layer()
 				if not isinstance(inFile, QgsVectorLayer):
 					problems.append("the input layer is not a vector layer")
-				elif inFile.geometryType() != QgsWkbTypes.PolygonGeometry:
+				elif inFile.geometryType() != Qgis.GeometryType.Polygon:
 					problems.append("the input layer is not a polygon layer")
 
 			# the output file must be set, and must be a shapefile or a geopackage
@@ -1214,7 +1213,7 @@ class PolygonDivider:
 
 			# report any problems to the user and give up (they can re-open the dialog and try again)
 			if problems:
-				self.iface.messageBar().pushMessage("Error:", f"Polygon Divider could not run: {'; '.join(problems)}.", level=Qgis.Critical)
+				self.iface.messageBar().pushMessage("Error:", f"Polygon Divider could not run: {'; '.join(problems)}.", level=Qgis.MessageLevel.Critical)
 				return
 
 			''' RUN THE TOOL '''
