@@ -7,7 +7,7 @@
 name=Polygon Divider
 qgisMinimumVersion=3.32
 description=Divides polygons into into an irregular grid of equal area 'squareish' polygons of a specified size 
-version=0.11
+version=0.12
 author=Jonny Huck
 email=polygondivider@lunegeographic.co.uk
 
@@ -20,8 +20,17 @@ repository=https://github.com/jonnyhuck/RFCL-PolygonDivider
 # Recommended items:
 
 hasProcessingProvider=no
-# Uncomment the following line and add your changelog:
-# changelog=
+changelog=
+    0.12
+      * Fixed the number of output polygons not always matching the specification (offcut handling)
+      * Fixed GeoPackage outputs containing only a single polygon when the input data has a 'fid' field
+      * Replaced the built-in Brent's Method with the pyroots implementations (brentq / brenth selectable in the dialog)
+      * Failed cuts now try all four directions before giving up; un-dividable polygons are written undivided and reported
+      * Fixed rotation being applied even when set to 0
+      * POINTX / POINTY are now written as decimals rather than being truncated to whole numbers
+      * When absorbing offcuts, the number of pieces is now chosen to keep piece sizes as close as possible to the target area
+      * Rotation now happens around the centre of the layer rather than the origin of the CRS
+      * Added form validation and various minor bug fixes
 
 # Tags are comma separated with spaces allowed
 tags=python, vector, polygon, divide, split, sample, partition, parcel

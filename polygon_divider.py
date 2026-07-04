@@ -23,33 +23,26 @@
 
  * This script divides a polygon into squareish sections of a specified size
  *
- * ERROR WE CAN FIX BY ADJUSTING TOLERANCE / N_SUBDIVISIONS:
- *  - Bracket is smaller than tolerance: the shape got smaller? OR got dramatically bigger. Can we check this? This is where we just want 
- 		to cut at the last location that worked and re-calculate the division stuff.
- *
  * TODO'S:
- *  - Needs some form of form validation
- *  - Pull out repeated file writing stuff into a function
  *  - Where / how often should we calculate the desired area?
- *  - How should we be dealing with reversing direction for subdivision?
  *  - Need to re-think how to deal with problems in subdivision - perhaps need to calculate all subdivisions then save all at once so we can roll back?
- *  - Look at saving last good bounds to narrow search interval after adjusting tolerance? Maybe use bisection to minimise the adjustment in tolerance?
  *  - This could be run in multiple parallel tasks (all strips calculated then divided up into processes to get squareish sections from them)
- *  - More minor TODO's throughout the code...
  *
  * @author jonnyhuck
  *
 """
 
-import sys
 import os.path
-from . import rotation
+import traceback
 from uuid import uuid4
 from .resources import *
+from qgis import processing
 from qgis.utils import iface
 from qgis.PyQt.QtGui import QIcon
+from .pyroots import Brentq, Brenth
 from qgis.PyQt.QtWidgets import QAction, QFileDialog
 from .polygon_divider_dialog import PolygonDividerDialog
+from processing.gui.AlgorithmExecutor import execute_in_place
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QMetaType
 from qgis.core import Qgis, QgsGeometry, QgsPoint, QgsField, QgsTask, QgsFeature, QgsVectorLayer, \
 	QgsVectorFileWriter, QgsProject, QgsMessageLog, QgsApplication, QgsWkbTypes
@@ -68,6 +61,43 @@ class BrentError(Exception):
 MESSAGE_CATEGORY = 'POLYGON DIVIDER'
 
 
+''' ROTATION FUNCTIONS (used to rotate the dataset so that the cutlines are at an angle to the axes) '''
+
+
+def rotate_layer(input_path: str, degrees: float, rotation_center: str = None, output_path: str = 'TEMPORARY_OUTPUT'):
+	"""
+	* Rotate the input dataset by the given number of degrees around the given center point,
+	*  returning the result as a new (in-memory by default) layer
+	"""
+	# run the rotation algorithm from the processing toolbox and return the resulting layer
+	return processing.run("native:rotatefeatures",
+		{
+			'INPUT': input_path,
+			'ANGLE': degrees,
+			'ANCHOR': rotation_center,
+			'OUTPUT': output_path
+		}
+	)['OUTPUT']
+
+
+def rotate_layer_in_place(input_layer, degrees: float, rotation_center: str = None):
+	"""
+	* Rotate the given layer by the given number of degrees around the given center point,
+	*  editing the layer directly (used to rotate the divided output back again)
+	"""
+	# get the rotation algorithm from the processing registry
+	alg = QgsApplication.instance().processingRegistry().algorithmById("native:rotatefeatures")
+
+	# run it against the layer's own features (edits the layer in place)
+	execute_in_place(alg,
+		{
+			'INPUT': input_layer,
+			'ANGLE': degrees,
+			'ANCHOR': rotation_center
+		}
+	)
+
+
 class PolygonDividerTask(QgsTask):
 	"""
 	* Class extending QgsTask to handle on different thread
@@ -75,7 +105,7 @@ class PolygonDividerTask(QgsTask):
 
 	''' INHERITED CLASS FUNCTIONS '''
 
-	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction, tolerance, rotation_in_degrees):
+	def __init__(self, layer, outFilePath, target_area, absorb_flag, direction, tolerance, rotation_in_degrees, solver_name='brentq'):
 		"""
 		* Initialise the thread
 		"""
@@ -92,8 +122,17 @@ class PolygonDividerTask(QgsTask):
 		self.exception = None
 		self.rotation_in_degrees = rotation_in_degrees
 
-		# point of rotation
-		self.rotation_center = f"{0},{0}"
+		# select the root-finding solver class based on the user's choice in the dialog
+		self.solver_class = Brenth if solver_name == 'brenth' else Brentq
+
+		# count of polygons that could not be divided (reported to the user on completion)
+		self.n_failed = 0
+
+		# point of rotation - the center of the layer's extent, so that the data rotates 'in place'
+		#  (rotating around the CRS origin would swing far-from-origin coordinates through very large
+		#  intermediate values, inviting floating point precision problems)
+		center = layer.extent().center()
+		self.rotation_center = f"{center.x()},{center.y()}"
 		self.rotation_success = False
 
 	def finished(self, result):
@@ -109,12 +148,19 @@ class PolygonDividerTask(QgsTask):
 			QgsMessageLog.logMessage('Polygon Division completed', MESSAGE_CATEGORY, Qgis.Success)
 			iface.messageBar().pushMessage("Success!", 'Polygon Division completed', level=Qgis.Success, duration=3)
 
+			# warn the user if any polygons could not be divided
+			if self.n_failed > 0:
+				QgsMessageLog.logMessage(f'{self.n_failed} polygon(s) could not be divided after trying all four directions and were written undivided', MESSAGE_CATEGORY, Qgis.Warning)
+				iface.messageBar().pushMessage("Warning:", f'{self.n_failed} polygon(s) could not be divided and were written undivided', level=Qgis.Warning, duration=6)
+
 			# finally, open the resulting file and return it
 			layer = iface.addVectorLayer(self.outFilePath, 'Divided Polygon', "ogr")
 
-			# alert if invalid
-			if not layer.isValid():
-				raise Exception("Output Dataset Invalid")
+			# alert if invalid (NB: don't raise here - this runs on the main thread, so an
+			#  unhandled exception could take the whole of QGIS down with it)
+			if layer is None or not layer.isValid():
+				QgsMessageLog.logMessage('Output Dataset Invalid', MESSAGE_CATEGORY, Qgis.Critical)
+				iface.messageBar().pushMessage("Error:", 'Output Dataset Invalid', level=Qgis.Critical)
 
 		# failure
 		else:
@@ -123,13 +169,11 @@ class PolygonDividerTask(QgsTask):
 				QgsMessageLog.logMessage('Polygon Division exited without exception', MESSAGE_CATEGORY, Qgis.Warning)
 				iface.messageBar().pushMessage("Warning:", 'Polygon Division Cancelled', level=Qgis.Warning, duration=3)
 
-			# failed with exception (raise exception)
+			# failed with exception (report it, including the stack trace to the log for debugging)
 			else:
-				QgsMessageLog.logMessage(f'Polygon Division Exception: {self.exception}', MESSAGE_CATEGORY, Qgis.Critical)
+				stack_trace = ''.join(traceback.format_exception(type(self.exception), self.exception, self.exception.__traceback__))
+				QgsMessageLog.logMessage(f'Polygon Division Exception: {stack_trace}', MESSAGE_CATEGORY, Qgis.Critical)
 				iface.messageBar().pushMessage("Error:", f'Polygon Division Failed: {str(self.exception)}', level=Qgis.Critical)
-				
-				# UN-COMMENT THIS TO SEE STACK TRACE
-				raise self.exception
 
 
 	def cancel(self):
@@ -149,7 +193,8 @@ class PolygonDividerTask(QgsTask):
 
 	def brent(self, xa, xb, xtol, ftol, max_iter, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward):
 		"""
-		* Brent's Method, following Wikipedia's article algorithm.
+		* Brent's Method, as implemented in the bundled pyroots library (Brentq or Brenth,
+		*  as selected by the user in the dialog).
 		*
 		* - xa is the lower bracket of the interval of the solution we search.
 		* - xb is the upper bracket of the interval of the solution we search.
@@ -162,114 +207,28 @@ class PolygonDividerTask(QgsTask):
 		* - targetArea is the desired area of the section to cut off geom.
 		* - horizontal or vertical cut - True / False respectively
 		* - forward (left-right or bottom top) cut or backward (right-left or top-bottom) - True / False respectively
+		*
+		* Returns the optimal coordinate in the variable dimension, or None on failure (in which
+		*  case self.exception is set to a BrentError describing what went wrong).
 		"""
 
-		''' SETUP '''
+		# construct the user-selected solver (pyroots' epsilon is the equivalent of ftol, xtol is the same)
+		solver = self.solver_class(epsilon=ftol, xtol=xtol, max_iter=max_iter, raise_on_fail=False)
 
-		# standard for iterative algorithms
-		EPS = sys.float_info.epsilon
+		# run the solver against the area difference function (f), passing on the geometry arguments
+		result = solver(self.f, xa, xb, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)
 
-		''' BASIC ERROR CHECKING (INTERVAL VALIDITY) '''
+		# if the solver converged, return the root that it found
+		if result.converged:
+			return result.x0
 
-		# check that the bracket's interval is sufficiently big for this computer to work with.
-		if abs(xb - xa) < EPS:
-			# raise BrentError("Initial bracket smaller than system epsilon.")
-			self.exception = BrentError("Initial bracket smaller than system epsilon.")
-			return False
+		# running out of iterations isn't as good, but the result seems generally fine, so return it anyway
+		if result.msg == "Exceeded max iterations.":
+			return result.x0	# NB: increasing the number of iterations doesn't seem to get any closer
 
-		# check lower bound
-		fa = self.f(xa, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)   # first function call
-		if abs(fa) < ftol:
-			# raise BrentError("Root is equal to the lower bracket")
-			self.exception = BrentError("Root is equal to the lower bracket")
-			return False
-
-		# check upper bound
-		fb = self.f(xb, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward)   # second function call
-		if abs(fb) < ftol:
-			# raise BrentError("Root is equal to the upper bracket")
-			self.exception = BrentError("Root is equal to the upper bracket")
-			return False
-
-		# check if the root is bracketed.
-		if fa * fb > 0.0:	# this is checking for different signs (to be sure we are either side of 0)
-			# raise BrentError("Root is not bracketed.")
-			self.exception = BrentError("Root is not bracketed.")
-			return False
-
-		''' START CALCULATION '''
-
-		# if the area from a is smaller than b, switch the values
-		if abs(fa) < abs(fb):
-			xa, xb = xb, xa
-			fa, fb = fb, fa
-
-		# initialise c at a (therefore at the one with the biggest area to the right of it)
-		xc, fc = xa, fa
-
-		# init mflag
-		mflag = True
-
-		# do until max iterations is reached
-		for i in range(max_iter):
-
-			# try to calculate `xs` by using inverse quadratic interpolation...
-			if fa != fc and fb != fc:
-				xs = (xa * fb * fc / ((fa - fb) * (fa - fc)) + xb * fa * fc / ((fb - fa) * (fb - fc)) + xc * fa * fb / ((fc - fa) * (fc - fb)))
-			else:
-				# ...if you can't, use the secant rule.
-				xs = xb - fb * (xb - xa) / (fb - fa)
-
-			# check if the value of `xs` is acceptable, if it isn't use bisection.
-			if ((xs < ((3 * xa + xb) / 4) or xs > xb) or
-				(mflag == True	and (abs(xs - xb)) >= (abs(xb - xc) / 2)) or
-				(mflag == False and (abs(xs - xb)) >= (abs(xc - d) / 2)) or
-				(mflag == True	and (abs(xb - xc)) < EPS) or
-				(mflag == False and (abs(xc - d)) < EPS)):
-
-				# overwrite unacceptable xs value with result from bisection
-				xs = (xa + xb) / 2
-				mflag = True
-			else:
-				mflag = False
-
-			''' THE ABOVE BLOCK USED BRENT'S METHOD TO GET A SUGGESTED VALUE FOR S,
-				THE BELOW BLOCK CHECKS IF IT IS GOOD, AND IF NOT SEEKS A NEW VALUE '''
-
-			# get the value from f using the new xs value
-			fs = self.f(xs, geom, fixedCoord1, fixedCoord2, targetArea, horizontal, forward) # repeated function call
-
-			# if the value (ideally 0) is less than the specified tolerance, return
-			if abs(fs) < ftol:
-				return xs
-
-			# if the bracket has become smaller than the tolerance (but the value wasn't reached, something is wrong)
-			# this can indicate the 'W' condition, where decreasing the interval increases the size of the resulting area
-			if abs(xb - xa) < xtol:
-				# raise BrentError("Bracket is smaller than tolerance.")
-				self.exception = BrentError("Bracket is smaller than tolerance.")
-				return False
-
-			# d is assigned for the first time here; it won't be used above on the first iteration because mflag is set
-			d = xc	# it is just used in Brent's checks, not in the calculation per se
-
-			# move c to b
-			xc, fc = xb, fb
-
-			# move one of the interval edges to the new point, such that zero remains within the interval
-			# if the areas from a and s (current result) are same sign, move b to s, otherwise, move a to s
-			if fa * fs < 0:			# different signs
-				xb, fb = xs, fs
-			else:					# same sign
-				xa, fa = xs, fs
-
-			# if the area from a is smaller than b, switch the values
-			if abs(fa) < abs(fb):
-				xa, xb = xb, xa
-				fa, fb = fb, fa
-
-		# this isn't as good (ran out of iterations), but seems generally fine
-		return xs	# NB: increasing the number of iterations doesn't seem to get any closer
+		# otherwise, record the failure as an exception and return None to signal it to the caller
+		self.exception = BrentError(result.msg)
+		return None
 
 
 	def splitPoly(self, polygon, splitter, horizontal, forward):
@@ -289,11 +248,8 @@ class PolygonDividerTask(QgsTask):
 		# http://gis.stackexchange.com/questions/114414/cannot-split-a-line-using-qgsgeometry-splitgeometry-in-qgis
 		res, polys, topolist = poly.splitGeometry(splitter, False)
 
-		# TODO: THE ERROR IS THAT THIS IS RETURNING 1001
-
 		# add poly (which might be a multipolygon) to the polys array
 		if poly.isMultipart():
-			## TODO: I think that this is where we might be getting an odd error on no absorb
 			# if the feature is a multipolygon, explode into separate polygons for individual processing
 			multiGeom = poly.asMultiPolygon()
 			for i in multiGeom:
@@ -419,8 +375,10 @@ class PolygonDividerTask(QgsTask):
 			# return the two sections (left is the potato, right is the chip...), plus any noncontiguous polygons
 			return left, right, noncontiguous
 		else:
-			# log error
-			QgsMessageLog.logMessage(f"FAIL: Polygon division failed ({res})", level=Qgis.Critical)
+			# log the error and raise an exception - this is caught by the caller (either to try another
+			#  cut direction, or by the catch-all in run() so that the user gets to see the message)
+			QgsMessageLog.logMessage(f"FAIL: Polygon division failed ({res})", MESSAGE_CATEGORY, Qgis.Critical)
+			raise Exception(f"Failed to split polygon (splitGeometry returned {res})")
 
 
 	def getSliceArea(self,sliceCoord, poly, fixedCoord1, fixedCoord2, horizontal, forward):
@@ -465,14 +423,16 @@ class PolygonDividerTask(QgsTask):
 		# rotate only if rotation number set, if 0, no need to rotate
 		if self.rotation_in_degrees:
 			try:
-				layer = rotation.rotate_layer(
+				layer = rotate_layer(
 					input_path=self.layer.source(),
 					degrees=self.rotation_in_degrees,
 					rotation_center=self.rotation_center
 				)
 				layer.updateExtents(True)
-			except Exception:
-				pass
+			except Exception as e:
+				# log the problem so that the user knows (processing continues with the un-rotated original)
+				QgsMessageLog.logMessage(f"Rotation failed ({e}), continuing without rotation", MESSAGE_CATEGORY, Qgis.Warning)
+				layer = None
 
 		# if the rotation was set, but fails
 		# continue with the original file, else set rotated layer
@@ -488,7 +448,6 @@ class PolygonDividerTask(QgsTask):
 			QgsMessageLog.logMessage("Started Polygon Division", MESSAGE_CATEGORY, Qgis.Info)
 
 			# get data out of object
-			# TODO: reference these properly
 			layer = self.layer
 			outFilePath = self.outFilePath
 			target_area = self.target_area
@@ -508,7 +467,7 @@ class PolygonDividerTask(QgsTask):
 			# initial settings
 			t = self.tolerance   # initial tolerance for function rooting - this is flexible now it has been divorced from the buffer
 			buffer = 1e-5        # this is the buffer to ensure that an intersection occurs
-			# TODO: this buffer value started causing splitGeometry to fail when it was 1e-6 - check this if it happens again
+			# NB: this buffer value started causing splitGeometry to fail when it was 1e-6 - check this if it happens again
 
 			# set the direction (horizontal or vertical)
 			if direction < 2:
@@ -522,23 +481,18 @@ class PolygonDividerTask(QgsTask):
 			else:
 				forward_flag = False
 
-			# this is used to make sure we don't hit an insurmountable error and just repeatedly change direction
-			# effectively, there are 4 directions in which we can cut, if all fail then all of these will be true and we give up
-			ERROR_FLAG_0 = False	# tracks if increasing number of subdivisions failed
-			ERROR_FLAG_1 = False	# tracks decreasing number of subdivisions to try and work around an error
-			ERROR_FLAG_2 = False	# tracks change direction from forward to backward (or vice versa) by switching forward_flag
-			ERROR_FLAG_3 = False	# tracks change cutline from horizontal to backward (or vice versa) by switching horizontal_flag
-
 			# get fields from the input shapefile
 			fieldList = self.layer.fields()
 
-			# TODO: NEED TO CHECK IF THEY ALREADY EXIST
-			# add new fields for this tool
-			fieldList.append(QgsField('POLY_ID', QMetaType.Type.Int))
-			fieldList.append(QgsField('UNIQUE_ID', QMetaType.Type.QString))
-			fieldList.append(QgsField('AREA', QMetaType.Type.Double))
-			fieldList.append(QgsField('POINTX', QMetaType.Type.Int))
-			fieldList.append(QgsField('POINTY', QMetaType.Type.Int))
+			# add new fields for this tool, checking first that they don't already exist in the input data
+			#  (if one does, it is re-used and its values are overwritten in the output, so warn the user)
+			for field in [QgsField('POLY_ID', QMetaType.Type.Int), QgsField('UNIQUE_ID', QMetaType.Type.QString),
+				QgsField('AREA', QMetaType.Type.Double), QgsField('POINTX', QMetaType.Type.Double),
+				QgsField('POINTY', QMetaType.Type.Double)]:
+				if fieldList.lookupField(field.name()) == -1:
+					fieldList.append(field)
+				else:
+					QgsMessageLog.logMessage(f"The field {field.name()} already exists in the input data - its values will be overwritten in the output", MESSAGE_CATEGORY, Qgis.Warning)
 
 			# create a new shapefile to write the results to
 			transform_context = QgsProject.instance().transformContext()
@@ -546,6 +500,17 @@ class PolygonDividerTask(QgsTask):
 			# .shp and .gpkg are supported
 			save_options.driverName = "ESRI Shapefile" if outFilePath.endswith('.shp') else "GPKG"
 			save_options.fileEncoding = "UTF-8"
+
+			# in a GeoPackage, a column called 'fid' is the primary key, so if the input data has a field with
+			#  that name then every output piece would inherit the same value and all but the first would be
+			#  rejected as duplicate keys - so tell OGR to use a different (unused) name for the primary key,
+			#  which turns the inherited field back into an ordinary attribute
+			if save_options.driverName == "GPKG" and fieldList.lookupField('fid') != -1:
+				fidName = 'ogc_fid'
+				while fieldList.lookupField(fidName) != -1:
+					fidName += '_'
+				save_options.layerOptions = [f'FID={fidName}']
+				QgsMessageLog.logMessage(f"The input data has a 'fid' field, so the GeoPackage primary key will be called {fidName}", MESSAGE_CATEGORY, Qgis.Info)
 			writer = QgsVectorFileWriter.create(outFilePath, fieldList, QgsWkbTypes.Polygon, layer.crs(), transform_context, save_options)
 			if writer.hasError() != QgsVectorFileWriter.NoError:
 				QgsMessageLog.logMessage(f"Error when creating {save_options.driverName}: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
@@ -554,24 +519,64 @@ class PolygonDividerTask(QgsTask):
 			# define this to ensure that it's global
 			subfeatures = []
 
-			# init feature counter (for ID's)
+			# init feature counter (for ID's) and a counter for any features that fail to write
 			j = 0
+			self.n_write_errors = 0
 
 			# how many sections will we have (for progress bar)
-			iter = layer.getFeatures()
 			totalArea = 0
-			for feat in iter:
+			for feat in layer.getFeatures():
 				totalArea += feat.geometry().area()
-			totalDivisions = totalArea // target_area
+			totalDivisions = max(totalArea // target_area, 1)	# needs to be at least 1, to avoid dividing by zero when updating progress
+
+			# helper to write a geometry to the output file with the correct schema and attributes
+			#  (avoids repeating the same block for pieces, offcuts and un-dividable polygons)
+			def writeFeature(geometry, currAttributes):
+
+				# we need to write to the counters in the enclosing scope
+				nonlocal j, currProgress
+
+				# make a feature with the right schema
+				fet = QgsFeature()
+				fet.setFields(fieldList)
+
+				# populate inherited attributes
+				for a in range(len(currAttributes)):
+					fet[a] = currAttributes[a]
+
+				# calculate representative point
+				pt = geometry.pointOnSurface().asPoint()
+
+				# populate new attributes
+				fet.setAttribute('POLY_ID', j)
+				fet.setAttribute('UNIQUE_ID', str(uuid4()))
+				fet.setAttribute('AREA', geometry.area())
+				fet.setAttribute('POINTX', pt[0])
+				fet.setAttribute('POINTY', pt[1])
+
+				# add the geometry to the feature
+				fet.setGeometry(geometry)
+
+				# write the feature to the out file, checking that it actually worked (a failure here would
+				#  otherwise be silent, resulting in missing features in the output)
+				if not writer.addFeature(fet):
+					QgsMessageLog.logMessage(f"Failed to write a feature to the output file: {writer.errorMessage()}", MESSAGE_CATEGORY, Qgis.Critical)
+					self.n_write_errors += 1
+
+				# increment feature counter
+				j += 1
+
+				# update progress bar if required
+				if int((j*1.0) / totalDivisions * 100) > currProgress:
+					currProgress = int((j*1.0) / totalDivisions * 100)
+					self.setProgress(currProgress)
 
 			# check if you've been killed
 			if self.isCanceled():
-				# raise UserAbortedNotification('USER Killed')
 				return False
 
 			# loop through all of the features in the input data
-			iter = layer.getFeatures()
-			for feat in iter:
+			for feat in layer.getFeatures():
 
 				# verify that it is a polygon
 				if feat.geometry().wkbType() in [QgsWkbTypes.Polygon, QgsWkbTypes.PolygonZ,
@@ -603,6 +608,9 @@ class PolygonDividerTask(QgsTask):
 					#loop through the geometries
 					for poly in subfeatures:
 
+						# flag to record if we had to give up dividing this polygon (so we don't write it out twice)
+						gaveUp = False
+
 						# how many polygons are we going to have to chop off?
 						nPolygons = int(poly.area() // target_area)
 
@@ -612,17 +620,36 @@ class PolygonDividerTask(QgsTask):
 
 						# adjust the targetArea to reflect absorption if required
 						if absorb_flag:
-							targetArea = target_area + ((poly.area() % target_area) / nPolygons)
+
+							# there is no offcut when absorbing, so the remainder has to be spread between the pieces -
+							#  use one more piece if that brings the piece size closer to the target (this keeps the
+							#  pieces as close as possible to the specified size, and also stops a piece that came up
+							#  fractionally short - e.g. a residual from a cut that was made to within the tolerance -
+							#  from being under-counted and absorbed into a double-sized neighbour)
+							if abs(poly.area() / (nPolygons + 1) - target_area) < abs(poly.area() / nPolygons - target_area):
+								nPolygons += 1
+
+							# spreading the remainder equally between the pieces is the same as dividing the area equally
+							targetArea = poly.area() / nPolygons
 						else:
 							targetArea = target_area
 
 						# work out the size of a square with area = targetArea if required
 						sq = targetArea**0.5
 
-						# until there is no more dividing to do...
-						while poly.area() > targetArea + t:
+						# work out when to stop dividing: if absorbing, the remainder is by construction exactly one
+						#  targetArea, so use a 50% margin that accumulated tolerance error cannot trip (otherwise we
+						#  can end up cutting off a sliver as an 'extra' polygon); if not absorbing, anything more
+						#  than the tolerance bigger than one piece still needs dividing
+						if absorb_flag:
+							minRemainder = targetArea * 1.5
+						else:
+							minRemainder = targetArea + t
 
-							# the bounds are used for the interval
+						# until there is no more dividing to do...
+						while poly.area() > minRemainder:
+
+							# the bounds of the polygon are used to construct the cutline for each attempted direction
 							boundsR = poly.boundingBox()
 							bounds = [boundsR.xMinimum(), boundsR.yMinimum(), boundsR.xMaximum(), boundsR.yMaximum()]
 
@@ -637,160 +664,83 @@ class PolygonDividerTask(QgsTask):
 							# is the interval larger than the required square? (We know the required area is > target+t because of the while statement)
 							if (interval[1]-interval[0]) > sq:
 
-								# this is the resulting area of a slice the width of sq from the polygon
-								if forward_flag:
-									sqArea = self.getSliceArea(interval[0] + sq - buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from bottom/left
-								else:
-									sqArea = self.getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal_flag, forward_flag)	# cutting from top/right
+								'''now use Brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal
+									cut), trying each of the four cut directions in turn (current direction first) until one of them works'''
 
-								# what is the nearest number of subdivisions of targetArea that could be extracted from that slice?
-								nSubdivisions = int(round(sqArea / targetArea))
+								# init the result so that we can tell whether any of the directions succeeded
+								result = None
 
-								# if the answer is 0, make it 1...
-								if nSubdivisions == 0:
-									nSubdivisions = 1
+								# try each direction: the current one first, then reversed movement, then each way along the flipped cutline
+								for horizontal, forward in [(horizontal_flag, forward_flag), (horizontal_flag, not forward_flag),
+									(not horizontal_flag, forward_flag), (not horizontal_flag, not forward_flag)]:
 
-								# make a backup copy to reset if we move from ERROR_FLAG_0 to ERROR_FLAG_1
-								nSubdivisions2 = nSubdivisions
-
-								'''now use Brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal cut)'''
-
-								# if it fails, try increasing nSubdivisions (k) until it works or you get a different error
-								while True:
-
-									# how big must the target area be to support this many subdivisions?
-									initialTargetArea = nSubdivisions * targetArea
-
-									# try to split using this new value
-
-									# try to zero the equation
-									result = self.brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag, forward_flag)
-
-									# if it worked (no exception raised) then exit this while loop and carry on
-									if result:
-										break
-									# otherwise, there must be an exception
+									# get interval and fixed coordinates for this cut direction (buffer otherwise there won't be an intersection between polygon and cutline!)
+									if horizontal:
+										interval = bounds[1] + buffer, bounds[3] - buffer
+										fixedCoords = bounds[0], bounds[2]
 									else:
-										# is it a W condition error?
-										if self.exception.value == "Bracket is smaller than tolerance.":
+										interval = bounds[0] + buffer, bounds[2] - buffer
+										fixedCoords = bounds[1], bounds[3]
 
-											# ...increase number of subdivisions and go around again
-											nSubdivisions += 1
-											continue
+									# the attempt might fail outright (e.g. the cutline misses the polygon), which just counts as a failed direction
+									try:
 
-										# not a W condition error
+										# is the interval larger than the required square in this direction?
+										if (interval[1]-interval[0]) > sq:
+
+											# this is the resulting area of a slice the width of sq from the polygon
+											if forward:
+												sqArea = self.getSliceArea(interval[0] + sq - buffer, poly, fixedCoords[0], fixedCoords[1], horizontal, forward)	# cutting from bottom/left
+											else:
+												sqArea = self.getSliceArea(interval[1] - sq + buffer, poly, fixedCoords[0], fixedCoords[1], horizontal, forward)	# cutting from top/right
+
+											# what is the nearest number of subdivisions of targetArea that could be extracted from that slice?
+											nSubdivisions = int(round(sqArea / targetArea))
+
+											# if the answer is 0, make it 1...
+											if nSubdivisions == 0:
+												nSubdivisions = 1
+
+										# the interval is too narrow for a square-width strip in this direction, so just try to cut off a single piece
 										else:
-											# set flag and stop trying to adjust nSubdivisions
-											ERROR_FLAG_0 = True
-											break
-
-								# if that didn't work, try decreasing instead of increasing
-								if ERROR_FLAG_0:
-
-									# log message
-									QgsMessageLog.logMessage("Increasing number of subdivisions didn't work, try decreasing... (Division)", MESSAGE_CATEGORY, Qgis.Warning)
-
-									nSubdivisions = nSubdivisions2	# reset
-									limit = 1
-									while nSubdivisions >= limit:
-
-										# set the flag if it's the last time around
-										if nSubdivisions == limit:
-											ERROR_FLAG_1 = True
+											nSubdivisions = 1
 
 										# how big must the target area be to support this many subdivisions?
 										initialTargetArea = nSubdivisions * targetArea
 
-										# try to split using this new value
-
 										# try to zero the equation
-										result = self.brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal_flag, forward_flag)
+										result = self.brent(interval[0], interval[1], 1e-6, t, 500, poly, fixedCoords[0], fixedCoords[1], initialTargetArea, horizontal, forward)
 
-										# if it worked (no exception raised) then exit this while loop and carry on
-										if result:
-											break
-										# otherwise, there must be an exception
-										else:
-											# ...increase number of subdivisions and go around again
-											nSubdivisions -= 1
-											continue
+									# treat a hard failure just the same as a failure to converge - move on to the next direction
+									except Exception as e:
+										self.exception = BrentError(str(e))
+										result = None
 
-								# if increasing the subdivision size didn't help, then start trying shifting directions
-								if ERROR_FLAG_1:
-
-									# these need resetting here otherwise it won't try to cut again, just skip to the next error!
-									ERROR_FLAG_0 = False
-									ERROR_FLAG_1 = False
-
-									# log message
-									QgsMessageLog.logMessage("Decreasing number of subdivisions didn't work, try playing with direction... (Division)", MESSAGE_CATEGORY, Qgis.Warning)
-
-									# switch the movement direction
-									if ERROR_FLAG_2 == False:
-
-										# log that this has been tried
-										ERROR_FLAG_2 = True
-										QgsMessageLog.logMessage("Reversing movement direction (Division)", MESSAGE_CATEGORY, Qgis.Warning)
-
-										# reverse the direction of movement and try again
-										forward_flag = not forward_flag
-										continue
-
-									# if the above didn't work, switch the direction of the cutline
-									elif ERROR_FLAG_3 == False:
-
-										# un-log 2, meaning that it will run again and so try the 4th direction
-										ERROR_FLAG_2 = False
-
-										# log that this has been tried
-										ERROR_FLAG_3 = True
-										QgsMessageLog.logMessage("Reversing cutline direction (Division)", MESSAGE_CATEGORY, Qgis.Warning)
-
-										# reverse the cutline direction and try again
-										horizontal_flag = not horizontal_flag
-										continue
-
-									# if none of the above worked, just skip it and move to a new feature
+									# if it worked then stop trying directions, otherwise log the failure and go around again
+									if result is not None:
+										break
 									else:
-										''' WRITE THE UNSPLITTABLE POLYGON TO THE SHAPEFILE ANYWAY '''
+										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Division)", MESSAGE_CATEGORY, Qgis.Warning)
 
-										# make a feature with the right schema
-										fet = QgsFeature()
-										fet.setFields(fieldList)
+								# if none of the four directions worked then we have to give up on this polygon
+								if result is None:
 
-										# populate inherited attributes
-										for a in range(len(currAttributes)):
-											fet[a] = currAttributes[a]
+									''' WRITE THE UNSPLITTABLE POLYGON TO THE SHAPEFILE ANYWAY (SO THAT NO AREA IS LOST) '''
+									writeFeature(poly, currAttributes)
 
-										# populate new attributes
-										fet.setAttribute('POLY_ID', j)
-										fet.setAttribute('UNIQUE_ID', str(uuid4()))
-										fet.setAttribute('AREA', poly.area())
+									# log that there was a problem and count it for the final report to the user
+									QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.Warning)
+									self.n_failed += 1
 
-										# add the geometry to the feature
-										fet.setGeometry(poly)
+									# clear the stored exception, as we are carrying on rather than failing
+									self.exception = None
 
-										# write the feature to the out file
-										writer.addFeature(fet)
+									# give up on this polygon (it has been written already) and move on to the next one, hopefully with more luck!
+									gaveUp = True
+									break
 
-										# increment feature counter and
-										j+=1
-
-										# update progress bar if required
-										if j // totalDivisions * 100 > currProgress:
-											self.setProgress(j // totalDivisions * 100)
-
-										# log that there was a problem
-										QgsMessageLog.logMessage("There was an un-dividable polygon in this dataset.", MESSAGE_CATEGORY, Qgis.Warning)
-
-										# on to the next one, hopefully with more luck!
-										continue
-
-								# if it worked, reset the flags
-								ERROR_FLAG_0 = False
-								ERROR_FLAG_1 = False
-								ERROR_FLAG_2 = False
-								ERROR_FLAG_3 = False
+								# the successful direction becomes the preferred direction for subsequent cuts
+								horizontal_flag, forward_flag = horizontal, forward
 
 								# create the desired cutline as lists of QgsPoints
 								if horizontal_flag:
@@ -804,222 +754,137 @@ class PolygonDividerTask(QgsTask):
 								# put the residuals in the list to be processed
 								subfeatures += residuals
 
+								# the strip contains nSubdivisions pieces, so the remainder after the cuts below is the final piece
+								nCuts = nSubdivisions - 1
+
 							# bounds not bigger than sq, so no division necessary, just subdivide this last one directly (nothing will happen if it can't be subdivided)
 							else:
 								# set the remainder of the polygon as the final slice, and poly to an empty polygon
 								initialSlice = poly
 								poly = QgsGeometry.fromPolygonXY([[]])
 
-								# what is the nearest number of subdivisions of targetArea that could be extracted from that slice? (must be at least 1)
-								# TODO: verify this doesn't need rounding
-								nSubdivisions = int(initialSlice.area() // targetArea) # shouldn't need rounding...
-								if nSubdivisions == 0:
-									nSubdivisions = 1
+								# work out how many cuts we need to make in this final slice
+								if absorb_flag:
+
+									# absorbing: cut the slice into however many equal pieces (at least 1) is closest to the target size...
+									nPieces = int(initialSlice.area() // targetArea)
+									if nPieces == 0:
+										nPieces = 1
+									if abs(initialSlice.area() / (nPieces + 1) - targetArea) < abs(initialSlice.area() / nPieces - targetArea):
+										nPieces += 1
+
+									# ...and the remainder after the cuts is simply the final piece
+									nCuts = nPieces - 1
+								else:
+
+									# not absorbing: cut off as many full pieces of targetArea as will fit (at least 1)...
+									nFull = int(initialSlice.area() // targetArea)
+									if nFull == 0:
+										nFull = 1
+
+									# ...and if what is left over is bigger than the tolerance then it is a true offcut (which needs its own
+									#  cut), otherwise the sub-tolerance sliver is simply absorbed into the final piece (rather than being
+									#  written out as a sliver polygon, which would make the number of polygons different to that specified)
+									if initialSlice.area() - (nFull * targetArea) > t:
+										nCuts = nFull
+									else:
+										nCuts = nFull - 1
+
+							# flag to record if we had to give up subdividing this slice (so we don't write it out twice)
+							sliceGaveUp = False
 
 							#...then divide that into sections of targetArea
-							for k in range(nSubdivisions-1):	# nCuts = nPieces - 1
+							for k in range(nCuts):	# nCuts pieces are chopped off, plus whatever remains at the end
 
-								# the bounds are used for the interval
-								sliceBoundsR = initialSlice.boundingBox()
-								sliceBounds = [sliceBoundsR.xMinimum(), sliceBoundsR.yMinimum(), sliceBoundsR.xMaximum(), sliceBoundsR.yMaximum()]
+								'''use Brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal
+									cut), trying each of the four cut directions in turn (perpendicular to the strip first) until one of them works'''
 
-								# get the slice direction (opposite to main direction)
-								sliceHorizontal = not horizontal_flag
+								# init the result so that we can tell whether any of the directions succeeded
+								sliceResult = None
 
-								if sliceHorizontal:
-									# get interval and fixed coordinates
-									sliceInterval = sliceBounds[1] + buffer, sliceBounds[3] - buffer # buffer otherwise there won't be an intersection between polygon and cutline!
-									sliceFixedCoords = sliceBounds[0], sliceBounds[2]
-								else:
-									# get interval and fixed coordinates
-									sliceInterval = sliceBounds[0] + buffer, sliceBounds[2] - buffer # buffer otherwise there won't be an intersection between polygon and cutline!
-									sliceFixedCoords = sliceBounds[1], sliceBounds[3]
+								# try each direction: perpendicular to the strip first (otherwise we would get long thin strips, not squares)
+								for sliceHorizontal, sliceForward in [(not horizontal_flag, forward_flag), (not horizontal_flag, not forward_flag),
+									(horizontal_flag, forward_flag), (horizontal_flag, not forward_flag)]:
 
-								# restore the tolerance (may be adjusted in the below loop)
-								tol = t
+									# the bounds are used for the interval
+									sliceBoundsR = initialSlice.boundingBox()
+									sliceBounds = [sliceBoundsR.xMinimum(), sliceBoundsR.yMinimum(), sliceBoundsR.xMaximum(), sliceBoundsR.yMaximum()]
 
-								# infinite loop
-								while True:
+									# get interval and fixed coordinates for this cut direction (buffer otherwise there won't be an intersection between polygon and cutline!)
+									if sliceHorizontal:
+										sliceInterval = sliceBounds[1] + buffer, sliceBounds[3] - buffer
+										sliceFixedCoords = sliceBounds[0], sliceBounds[2]
+									else:
+										sliceInterval = sliceBounds[0] + buffer, sliceBounds[2] - buffer
+										sliceFixedCoords = sliceBounds[1], sliceBounds[3]
 
-									# brent's method to find the optimal coordinate in the variable dimension (e.g. the y coord for a horizontal cut)
+									# the attempt might fail outright (e.g. the cutline misses the polygon), which just counts as a failed direction
+									try:
 
-									# search for result
-									sliceResult = self.brent(sliceInterval[0], sliceInterval[1], 1e-6, tol, 500, initialSlice, sliceFixedCoords[0], sliceFixedCoords[1], targetArea, sliceHorizontal, forward_flag)
+										# try to zero the equation
+										sliceResult = self.brent(sliceInterval[0], sliceInterval[1], 1e-6, t, 500, initialSlice, sliceFixedCoords[0], sliceFixedCoords[1], targetArea, sliceHorizontal, sliceForward)
 
-									# stop searching if result is found
-									if sliceResult:
+									# treat a hard failure just the same as a failure to converge - move on to the next direction
+									except Exception as e:
+										self.exception = BrentError(str(e))
+										sliceResult = None
+
+									# if it worked then stop trying directions, otherwise log the failure and go around again
+									if sliceResult is not None:
 										break
 									else:
-										# if it is a W condition error, double the tolerance
-										if self.exception.value == "Bracket is smaller than tolerance.":
-											QgsMessageLog.logMessage(self.exception.value + ": increasing tolerance (Subdivision)", MESSAGE_CATEGORY, Qgis.Warning)
+										QgsMessageLog.logMessage(f"{self.exception.value}: trying next direction (Subdivision)", MESSAGE_CATEGORY, Qgis.Warning)
 
-											# double the tolerance and try again
-											tol *= 2
-											continue
+								# if none of the four directions worked then we have to give up on this slice
+								if sliceResult is None:
 
-										# otherwise, give up and try something else
-										else:
-											# set the flag that this has been tried and move on
-											ERROR_FLAG_1 = True
-											break
+									''' WRITE THE UNSPLITTABLE SLICE TO THE SHAPEFILE ANYWAY (SO THAT NO AREA IS LOST) '''
+									writeFeature(initialSlice, currAttributes)
 
-								''' IF THE ABOVE DIDNT WORK THEN WE NEED TO TRY MORE DRASTIC MEASURES '''
+									# log that there was a problem and count it for the final report to the user
+									QgsMessageLog.logMessage("There was an un-subdividable slice in this dataset (all four directions failed).", MESSAGE_CATEGORY, Qgis.Warning)
+									self.n_failed += 1
 
-								# try reversing the movement direction
-								if ERROR_FLAG_1 and not ERROR_FLAG_2: # (NB: Subdivision does not use Errorflag 0)
+									# clear the stored exception, as we are carrying on rather than failing
+									self.exception = None
 
-									# log that this has been tried
-									ERROR_FLAG_2 = True
-									QgsMessageLog.logMessage("Reversing movement direction (Subdivision)", MESSAGE_CATEGORY, Qgis.Warning)
+									# give up on this slice (it has been written already) and move on, hopefully with more luck!
+									sliceGaveUp = True
+									break
 
-									# reverse the direction of movement and try again
-									forward_flag = not forward_flag
-									continue
-
-								# if that didn't work, switch the direction of the cutline
-								elif ERROR_FLAG_1 and not ERROR_FLAG_3:
-
-									# log that this has been tried
-									ERROR_FLAG_3 = True
-									QgsMessageLog.logMessage("Reversing cutline direction (Subdivision):", MESSAGE_CATEGORY, Qgis.Warning)
-
-									# reverse the cutline direction and pass back to the outer division to try again in the opposite direction (otherwise we would get long thin strips, not squares)
-									horizontal_flag = not horizontal_flag
-									break	# this should mean that the 'else' for this statement will never be reached
-
-								# if it worked, reset the flags
-								ERROR_FLAG_1 = False
-								ERROR_FLAG_2 = False
-								ERROR_FLAG_3 = False
+								# the successful movement direction becomes the preferred direction for subsequent cuts
+								forward_flag = sliceForward
 
 								# create the desired cutline as lists of QgsPoints
-								if horizontal_flag:
-									sliceLine = [(sliceResult, sliceFixedCoords[0]), (sliceResult, sliceFixedCoords[1])]	# horizontal split
+								if sliceHorizontal:
+									sliceLine = [(sliceFixedCoords[0], sliceResult), (sliceFixedCoords[1], sliceResult)]	# horizontal split
 								else:
-									sliceLine = [(sliceFixedCoords[0], sliceResult), (sliceFixedCoords[1], sliceResult)]	# vertical split
+									sliceLine = [(sliceResult, sliceFixedCoords[0]), (sliceResult, sliceFixedCoords[1])]	# vertical split
 
 								# calculate the resulting polygons - initialSlice becomes left (to be chopped again)
-								initialSlice, right, residuals = self.splitPoly(initialSlice, sliceLine, sliceHorizontal, forward_flag)
+								initialSlice, right, residuals = self.splitPoly(initialSlice, sliceLine, sliceHorizontal, sliceForward)
 
 								# put the residuals in the list to be processed
 								subfeatures += residuals
 
-								''' WRITE TO SHAPEFILE '''
+								''' WRITE THE PIECE TO THE SHAPEFILE '''
+								writeFeature(right, currAttributes)
 
-								# make a feature with the right schema
-								fet = QgsFeature()
-								fet.setFields(fieldList)
+							## WRITE THE REMAINDER OF THE SLICE (THE FINAL PIECE, OR THE OFFCUT IF NOT ABSORBING) TO SHAPEFILE
+							#  (unless we gave up on the slice above, in which case it has been written already)
+							if not sliceGaveUp:
+								writeFeature(initialSlice, currAttributes)
 
-								# populate inherited attributes
-								for a in range(len(currAttributes)):
-									fet[a] = currAttributes[a]
-
-								# calculate representative point
-								pt = right.pointOnSurface().asPoint()
-
-								# populate new attributes
-								fet.setAttribute('POLY_ID', j)
-								fet.setAttribute('UNIQUE_ID', str(uuid4()))
-								fet.setAttribute('AREA', right.area())
-								fet.setAttribute('POINTX', pt[0])
-								fet.setAttribute('POINTY', pt[1])
-
-								# add the geometry to the feature
-								fet.setGeometry(right)
-
-								# write the feature to the out file
-								writer.addFeature(fet)
-
-								# increment feature counter and
-								j+=1
-
-								# update progress bar if required
-								if int((j*1.0) / totalDivisions * 100) > currProgress:
-									currProgress = int((j*1.0) / totalDivisions * 100)
-									self.setProgress(currProgress)
-
-							## WRITE ANY OFFCUT FROM SUBDIVISION TO SHAPEFILE
-
-							# make a feature with the right schema
-							fet = QgsFeature()
-							fet.setFields(fieldList)
-
-							# populate inherited attributes
-							for a in range(len(currAttributes)):
-								fet[a] = currAttributes[a]
-
-							# calculate representative point
-							pt = initialSlice.pointOnSurface().asPoint()
-
-							# populate new attributes
-							fet.setAttribute('POLY_ID', j)
-							fet.setAttribute('UNIQUE_ID', str(uuid4()))
-							fet.setAttribute('AREA', initialSlice.area())
-							fet.setAttribute('POINTX', pt[0])
-							fet.setAttribute('POINTY', pt[1])
-
-							# add the geometry to the feature
-							fet.setGeometry(initialSlice)
-
-							# write the feature to the out file
-							writer.addFeature(fet)
-
-							# increment feature counter and
-							j+=1
-
-							# update progress bar if required
-							if int((j*1.0) / totalDivisions * 100) > currProgress:
-								currProgress = int((j*1.0) / totalDivisions * 100)
-								self.setProgress(currProgress)
-
-						try:
-
-							## WRITE  ANY OFFCUT FROM DIVISION TO SHAPEFILE
-
-							# make a feature with the right schema
-							fet = QgsFeature()
-							fet.setFields(fieldList)
-
-							# populate inherited attributes
-							for a in range(len(currAttributes)):
-								fet[a] = currAttributes[a]
-
-							# calculate representative point
-							pt = poly.pointOnSurface().asPoint()
-
-							# populate new attributes
-							fet.setAttribute('POLY_ID', j)
-							fet.setAttribute('UNIQUE_ID', str(uuid4()))
-							fet.setAttribute('AREA', poly.area())
-							fet.setAttribute('POINTX', pt[0])
-							fet.setAttribute('POINTY', pt[1])
-
-							# add the geometry to the feature
-							fet.setGeometry(poly)
-
-							# write the feature to the out file
-							writer.addFeature(fet)
-
-							# increment feature counter and
-							j+=1
-
-							# update progress bar if required
-							if int((j*1.0) / totalDivisions * 100) > currProgress:
-								currProgress = int((j*1.0) / totalDivisions * 100)
-								self.setProgress(currProgress)
-
-						except:
-							# this just means that there is no offcut, which is no problem!
-							pass
+						## WRITE THE REMAINDER FROM DIVISION (THE FINAL PIECE, OR THE OFFCUT IF NOT ABSORBING) TO SHAPEFILE
+						#  (unless we gave up on the polygon, or there is nothing left but a sub-tolerance sliver)
+						if not gaveUp and not poly.isEmpty() and poly.area() > t:
+							writeFeature(poly, currAttributes)
 				else:
 					QgsMessageLog.logMessage("Whoops! That dataset isn't polygons!", MESSAGE_CATEGORY, Qgis.Critical)
-					# raise Exception("Whoops! That dataset isn't polygons!")
 					self.exception = Exception("Whoops! That dataset isn't polygons!")
 					return False
 
 			if self.isCanceled():
-				# raise UserAbortedNotification('USER Killed')
 				return False
 
 			# finally, open the resulting file and return it
@@ -1032,12 +897,12 @@ class PolygonDividerTask(QgsTask):
 				# rotate the layer if the flag was set
 				if self.rotation_success:
 					layer.updateExtents(True)
-					rotation.rotate_layer_in_place(
+					rotate_layer_in_place(
 						input_layer=layer,
 						degrees=-self.rotation_in_degrees,
 						rotation_center=self.rotation_center
 					)
-					# TODO: extent calculation fails (but no error is thrown in QGIS 3.28) when updating shapefile, but everything is alright when layer is saved as a GPKG
+					# NB: extent calculation fails (but no error is thrown in QGIS 3.28) when updating shapefile, but everything is alright when layer is saved as a GPKG
 					# it is not a critical error, layer is still valid and geometry has no errors
 					# just QGIS's 'Zoom to Layer(s)' might not center the layer correctly, as it depends on extent
 					layer.updateExtents(True)
@@ -1160,9 +1025,6 @@ class PolygonDivider:
 		:rtype: QAction
 		"""
 
-		# Create the dialog (after translation) and keep reference
-		self.dlg = PolygonDividerDialog()
-
 		icon = QIcon(icon_path)
 		action = QAction(icon, text, parent)
 		action.triggered.connect(callback)
@@ -1215,9 +1077,17 @@ class PolygonDivider:
 		if self.dlg.radioButton_2.isChecked():
 			self.dlg.lineEdit.setDisabled(True)
 			self.dlg.lineEdit_3.setEnabled(True)
+
+			# absorbing offcuts makes no sense when dividing into an exact number of polygons, so
+			#  un-tick and disable the option (it is also enforced when the settings are read in run)
+			self.dlg.checkBox.setChecked(False)
+			self.dlg.checkBox.setDisabled(True)
 		elif self.dlg.radioButton.isChecked():
 			self.dlg.lineEdit.setEnabled(True)
 			self.dlg.lineEdit_3.setDisabled(True)
+
+			# re-enable the absorb offcuts option
+			self.dlg.checkBox.setEnabled(True)
 
 
 	def initGui(self):
@@ -1278,6 +1148,10 @@ class PolygonDivider:
 		self.dlg.comboBox_2.clear() # need to clear here or it will add them all again every time the dialog is opened
 		self.dlg.comboBox_2.addItems(['left to right', 'right to left', 'bottom to top', 'top to bottom'])
 
+		# populate comboBoxSolver with the available root-finding algorithms
+		self.dlg.comboBoxSolver.clear() # need to clear here or it will add them all again every time the dialog is opened
+		self.dlg.comboBoxSolver.addItems(['brentq', 'brenth'])
+
 		# show the dialog
 		self.dlg.show()
 
@@ -1287,19 +1161,73 @@ class PolygonDivider:
 		# See if OK was pressed
 		if result:
 
+			''' VALIDATE THE FORM INPUTS '''
+
+			# collect descriptions of any problems so that they can all be reported to the user at once
+			problems = []
+
+			# there must be a layer selected...
+			inFile = None
+			if not layers or self.dlg.comboBox.currentIndex() < 0:
+				problems.append("no input layer is selected")
+			else:
+				# ...and it must be a polygon vector layer
+				inFile = layers[self.dlg.comboBox.currentIndex()].layer()
+				if not isinstance(inFile, QgsVectorLayer):
+					problems.append("the input layer is not a vector layer")
+				elif inFile.geometryType() != QgsWkbTypes.PolygonGeometry:
+					problems.append("the input layer is not a polygon layer")
+
+			# the output file must be set, and must be a shapefile or a geopackage
+			outFilePath = self.dlg.lineEdit_2.text().strip()
+			if not (outFilePath.endswith('.shp') or outFilePath.endswith('.gpkg')):
+				problems.append("the output file must be a .shp or .gpkg file")
+
+			# the target area must be a positive number (only used if that option is selected)
+			targetArea = 0
+			if self.dlg.radioButton.isChecked():
+				try:
+					targetArea = float(self.dlg.lineEdit.text())
+					if targetArea <= 0:
+						problems.append("the target area must be greater than 0")
+				except ValueError:
+					problems.append("the target area must be a number")
+
+			# the number of divisions must be a positive whole number (only used if that option is selected)
+			num_divisions = 1
+			if self.dlg.radioButton_2.isChecked():
+				try:
+					num_divisions = int(self.dlg.lineEdit_3.text())
+					if num_divisions <= 0:
+						problems.append("the number of divisions must be greater than 0")
+				except ValueError:
+					problems.append("the number of divisions must be a whole number")
+
+			# the tolerance must be a positive number
+			tolerance = 0
+			try:
+				tolerance = float(self.dlg.lineEdit_4.text())
+				if tolerance <= 0:
+					problems.append("the tolerance must be greater than 0")
+			except ValueError:
+				problems.append("the tolerance must be a number")
+
+			# report any problems to the user and give up (they can re-open the dialog and try again)
+			if problems:
+				self.iface.messageBar().pushMessage("Error:", f"Polygon Divider could not run: {'; '.join(problems)}.", level=Qgis.Critical)
+				return
+
 			''' RUN THE TOOL '''
 
-			# get user settings
-			inFile = layers[self.dlg.comboBox.currentIndex()].layer()
-			outFilePath = self.dlg.lineEdit_2.text()
-			targetArea = float(self.dlg.lineEdit.text())
+			# get the remaining user settings (these cannot be invalid)
 			absorbFlag = self.dlg.checkBox.isChecked()
 			direction = self.dlg.comboBox_2.currentIndex()
-			tolerance = float(self.dlg.lineEdit_4.text())
+			solverName = self.dlg.comboBoxSolver.currentText()
 			rotation_in_degrees = float(self.dlg.doubleSpinBoxRotation.value())
 
-			# invert rotation direction if it is not 0 (so we are effectively rotating the cutline, not the polygon)
-			rotation_in_degrees = 360 - rotation_in_degrees
+			# invert rotation direction (so we are effectively rotating the cutline, not the polygon)
+			#  NB: the modulo keeps 0 as 0, so that no rotation is attempted when none was requested
+			rotation_in_degrees = (360 - rotation_in_degrees) % 360
 
 			# if the user has selected number of divisions option, calculate target area
 			if self.dlg.radioButton_2.isChecked():
@@ -1309,15 +1237,11 @@ class PolygonDivider:
 				for feature in inFile.getFeatures():
 					total_area += feature.geometry().area()
 
-				# get the number of divisions the user entered
-				num_divisions = int(self.dlg.lineEdit_3.text())
-
 				# calculate target area for each division
 				targetArea = total_area / float(num_divisions)
 
-				# turn off absorb flag for this case
-				# TODO: enforce this in the UI
+				# turn off absorb flag for this case (also enforced in the UI by radio_handler)
 				absorbFlag = False
 
 			# launch the task
-			self.tm.addTask(PolygonDividerTask(inFile, outFilePath, targetArea, absorbFlag, direction, tolerance, rotation_in_degrees))
+			self.tm.addTask(PolygonDividerTask(inFile, outFilePath, targetArea, absorbFlag, direction, tolerance, rotation_in_degrees, solverName))

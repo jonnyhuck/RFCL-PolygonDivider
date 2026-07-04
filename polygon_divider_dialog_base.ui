@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>377</width>
-    <height>513</height>
+    <height>570</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,7 +20,7 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>470</y>
+     <y>525</y>
      <width>341</width>
      <height>32</height>
     </rect>
@@ -36,7 +36,7 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>450</y>
+     <y>495</y>
      <width>131</width>
      <height>22</height>
     </rect>
@@ -243,11 +243,34 @@
     <string>0.1</string>
    </property>
   </widget>
-  <widget class="QLabel" name="label_7">
+  <widget class="QLabel" name="label_8">
    <property name="geometry">
     <rect>
      <x>20</x>
      <y>380</y>
+     <width>341</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Root-Finding Algorithm</string>
+   </property>
+  </widget>
+  <widget class="QComboBox" name="comboBoxSolver">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>400</y>
+     <width>341</width>
+     <height>27</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_7">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>440</y>
      <width>341</width>
      <height>16</height>
     </rect>
@@ -260,7 +283,7 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>400</y>
+     <y>460</y>
      <width>111</width>
      <height>31</height>
     </rect>
@@ -282,6 +305,7 @@
   <tabstop>pushButton</tabstop>
   <tabstop>lineEdit</tabstop>
   <tabstop>comboBox_2</tabstop>
+  <tabstop>comboBoxSolver</tabstop>
   <tabstop>checkBox</tabstop>
  </tabstops>
  <resources/>
